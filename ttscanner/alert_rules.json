@@ -1,0 +1,38 @@
+{
+    "TTScanner": {
+        "trigger_type": "state_change",
+        "fields": ["Direction", "Profit %", "Target #1", "Target #2"],
+        "alerts": [
+            {"field": "Direction", "message": "📌 New {direction} position opened for {symbol} at {entry_price}"},
+            {"field": "Profit %", "message": "💰 Profit crossed {value}% for {symbol}"},
+            {"field": "Target #1", "message": "🎯 Target #1 hit for {symbol} at {target1}"},
+            {"field": "Target #2", "message": "🎯 Target #2 hit for {symbol} at {target2}"}
+        ]
+    },
+    "FSOptions": {
+        "trigger_type": "price_cross",
+        "fields": ["Call Level", "Call Strike", "Put Level", "Put Strike"],
+        "alerts": [
+            {"field": "Call Level", "message": "⚠️ Price nearing Call Strike at {value}"},
+            {"field": "Call Strike", "message": "🔥 Bullish breakout confirmed for {symbol}"},
+            {"field": "Put Level", "message": "⚠️ Price nearing Put Strike at {value}"},
+            {"field": "Put Strike", "message": "🔻 Bearish breakdown triggered"}
+        ]
+    },
+    "MENTFib": {
+        "trigger_type": "price_zone",
+        "fields": ["Bull Fib Trigger Level", "Bear Fib Trigger Level",
+                   "Bull Zone 1","Bull Zone 2","Bull Zone 3",
+                   "Bear Zone 1","Bear Zone 2","Bear Zone 3"],
+        "alerts": [
+            {"field": "Bull Fib Trigger Level", "message": "🔥 Bullish trend activation (Fib Trigger hit)"},
+            {"field": "Bear Fib Trigger Level", "message": "⚠️ Bearish trend activation (Fib Trigger hit)"},
+            {"field": "Bull Zone 1", "message": "📈 Price moving into Bull Zone 1"},
+            {"field": "Bull Zone 2", "message": "📈 Price moving into Bull Zone 2"},
+            {"field": "Bull Zone 3", "message": "📈 Price moving into Bull Zone 3"},
+            {"field": "Bear Zone 1", "message": "⚠️ Price moving into Bear Zone 1"},
+            {"field": "Bear Zone 2", "message": "⚠️ Price moving into Bear Zone 2"},
+            {"field": "Bear Zone 3", "message": "⚠️ Price moving into Bear Zone 3"}
+        ]
+    }
+}

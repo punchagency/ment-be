@@ -10,7 +10,8 @@ from .models import (
     CustomAlert,
     TriggeredAlert,
     FavoriteRow,
-    UserSettings
+    UserSettings,
+    SymbolState
 )
 
 @admin.register(MENTUser)
@@ -48,9 +49,9 @@ class MainDataAdmin(admin.ModelAdmin):
 
 @admin.register(GlobalAlertRule)
 class GlobalAlertRuleAdmin(admin.ModelAdmin):
-    list_display = ('field_name', 'condition_type', 'field_type' ,'is_active', 'created_at')
+    list_display = ('field_name', 'symbol_interval', 'condition_type' ,'is_active', 'created_at')
     search_fields = ('field_name',)
-    list_filter = ('is_active', 'condition_type', 'field_type')
+    list_filter = ('is_active', 'condition_type', 'symbol_interval')
 
 @admin.register(CustomAlert)
 class CustomAlertAdmin(admin.ModelAdmin):
@@ -72,3 +73,8 @@ class FavoriteRowAdmin(admin.ModelAdmin):
 class UserSettingsAdmin(admin.ModelAdmin):
     list_display = ('user', 'theme', 'alerts_enabled', 'delivery_methods', 'alert_email', 'alert_phone')
     search_fields = ('user__email', 'user__phone','user__external_user_id')
+
+@admin.register(SymbolState)
+class SymbolStateAdmin(admin.ModelAdmin):
+    list_display = ('file_association', 'symbol', 'last_row_data', 'last_price', 'last_direction', 'target1_hit' , 'target2_hit', 'last_zone',
+                    'last_alerts', 'updated_at')

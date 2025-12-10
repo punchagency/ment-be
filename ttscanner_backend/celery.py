@@ -2,19 +2,22 @@ from __future__ import absolute_import, unicode_literals
 import os
 from celery import Celery
 from celery.schedules import timedelta
+from dotenv import load_dotenv
 
-# Set Django settings
+load_dotenv()
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ttscanner_backend.settings")
 
 app = Celery("ttscanner_backend")
 app.config_from_object("django.conf:settings", namespace="CELERY")
+app.autodiscover_tasks()
+
 app.conf.beat_schedule = {
-    'import-files-every-30-seconds': { 
-        'task': 'ttscanner.tasks.check_and_import_files', 
-        'schedule': 30,  
+    'check-and-import-files-every-60-seconds': {
+        'task': 'ttscanner.tasks.check_and_import_files',
+        'schedule': 60,
     },
 }
-app.autodiscover_tasks()
+
 
 
 @app.on_after_configure.connect
@@ -24,13 +27,17 @@ def setup_periodic_tasks(sender, **kwargs):
 
     files = FileAssociation.objects.all()
     for file in files:
+        if not file.interval or not file.interval.interval_minutes:
+            print(f"[SKIP] {file.file_name}: no interval set")
+            continue
+
         interval_seconds = file.interval.interval_minutes * 60
 
-        # Add a periodic task per file
         sender.add_periodic_task(
             timedelta(seconds=interval_seconds),
             import_file_association.s(file.id),
             name=f"import_{file.file_name}"
         )
+
 
 

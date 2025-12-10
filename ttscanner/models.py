@@ -1,4 +1,6 @@
 from django.db import models
+import re
+from django.core.exceptions import ValidationError
 import hashlib
 
 class MENTUser(models.Model):
@@ -10,6 +12,10 @@ class MENTUser(models.Model):
 
 class Algo(models.Model):
     algo_name = models.CharField(max_length=255, unique=True)
+    supports_targets = models.BooleanField(default=True)
+    supports_direction = models.BooleanField(default=True)
+    supports_volume_alerts = models.BooleanField(default=False)
+    price_field_key = models.CharField(max_length=100, default="last price")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -19,8 +25,9 @@ class Algo(models.Model):
         db_table = 'algos'
 
 
+
 class Group(models.Model):
-    group_name = models.CharField(max_length=255, unique=True)
+    group_name = models.CharField(max_length=255, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -30,28 +37,27 @@ class Group(models.Model):
         db_table = 'groups'
 
 
+
 class Interval(models.Model):
-    INTERVAL_CHOICES = [
-        ("1min", 1),
-        ("2min", 2),
-        ("5min", 5),
-        ("10min", 10),
-        ("15min", 15),
-        ("30min", 30),
-        ("60min", 60),
-        ("daily", 1440),
-    ]
-    interval_name = models.CharField(
-        max_length=10,
-        choices=[(v,v) for v,_ in INTERVAL_CHOICES],
-        unique=True)
+    interval_name = models.CharField(max_length=20, unique=True)
     interval_minutes = models.PositiveIntegerField(editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
-        mapping = dict(self.INTERVAL_CHOICES)
-        self.interval_minutes = mapping[self.interval_name]
-        return super().save(*args, **kwargs)
+        name = self.interval_name.strip().lower()
+
+        if name == "daily":
+            self.interval_minutes = 1440
+        else:
+            match = re.match(r"(\d+)(min|h)$", name)
+            value, unit = match.groups()
+            value = int(value)
+            if unit == "min":
+                self.interval_minutes = value
+            elif unit == "h":
+                self.interval_minutes = value * 60
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.interval_name
@@ -61,30 +67,58 @@ class Interval(models.Model):
 
 
 
+
 class FileAssociation(models.Model):
-    algo = models.ForeignKey(Algo, on_delete=models.CASCADE)
-    group = models.ForeignKey(Group, on_delete=models.CASCADE, null=True, blank=True)
-    interval = models.ForeignKey(Interval, on_delete=models.CASCADE)
+    algo = models.ForeignKey(Algo, on_delete=models.SET_NULL, null=True)
+    group = models.ForeignKey(Group, on_delete=models.SET_NULL, null=True, blank=True)
+    interval = models.ForeignKey(Interval, on_delete=models.SET_NULL, null=True)
+    
+    algo_name_copy = models.CharField(max_length=255, blank=True)
+    group_name_copy = models.CharField(max_length=255, blank=True, null=True)
+    interval_name_copy = models.CharField(max_length=255, blank=True)
+
+    status = models.CharField(
+        max_length=50,
+        choices=[
+            ("active", "Active"),
+            ("unknown", "Unknown Algo")
+        ],
+        default="active"
+    )
     headers = models.JSONField(null=True, blank=True)
-    file_name = models.CharField(max_length=255, unique=True, editable=False) 
-    file_path = models.CharField(max_length=1024, blank=True, null=True)  
-    last_hash = models.CharField(max_length=128, blank=True, null=True)   
-    last_fetched_at = models.DateTimeField(null=True, blank=True)  
+    file_name = models.CharField(max_length=255, unique=True, editable=False)
+    file_path = models.CharField(max_length=1024, blank=True, null=True)
+    last_hash = models.CharField(max_length=128, blank=True, null=True)
+    last_fetched_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('algo', 'group', 'interval')
         db_table = 'file_associations'
+        unique_together = ('algo', 'group', 'interval')
 
     def save(self, *args, **kwargs):
-        algo_part = self.algo.algo_name.replace(' ', '')
-        group_part = self.group.group_name.replace(' ', '')
-        interval_part = self.interval.interval_name.replace(' ', '')
-        self.file_name = f"{algo_part}{group_part}{interval_part}.csv"
+        if self.algo:
+            self.algo_name_copy = self.algo.algo_name
+
+        if self.group:
+            self.group_name_copy = self.group.group_name
+        else:
+            self.group_name_copy = None 
+
+        if self.interval:
+            self.interval_name_copy = self.interval.interval_name
+
+        algo_part = self.algo_name_copy.replace(" ", "")
+        interval_part = self.interval_name_copy.replace(" ", "")
+
+        if self.group_name_copy is None:
+            self.file_name = f"{algo_part}{interval_part}.csv"
+        else:
+            group_part = self.group_name_copy.replace(" ", "")
+            self.file_name = f"{algo_part}{group_part}{interval_part}.csv"
+
         super().save(*args, **kwargs)
 
-    def __str__(self):
-        return self.file_name
 
 
 class MainData(models.Model):
@@ -98,39 +132,53 @@ class MainData(models.Model):
 
 class GlobalAlertRule(models.Model):
     file_association = models.ForeignKey(FileAssociation, on_delete=models.CASCADE, related_name='global_alerts')
+    symbol_interval = models.CharField(max_length=50)
     field_name = models.CharField(max_length=255)
-    field_type = models.CharField(max_length=50, choices=[('numeric','Numeric'),('text','Text')])
+    target_1_hit_at = models.DateTimeField(null=True, blank=True)
+    target_2_hit_at = models.DateTimeField(null=True, blank=True)
     condition_type = models.CharField(max_length=50, choices=[
-        ('change','Any Change'),
-        ('increase','Increased'),
-        ('decrease','Decreased'),
-        ('equals','Equals Specific Value'),
-        ('threshold_cross','Crossed Threshold'),
+        ('change', 'Any Change'),
+        ('increase', 'Increased'),
+        ('decrease', 'Decreased'),
+        ('equals', 'Equals Specific Value'),
+        ('threshold_cross', 'Crossed Threshold'),
     ])
     compare_value = models.CharField(max_length=255, null=True, blank=True)
     last_value = models.CharField(max_length=255, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
-    def __str__(self):
-        return f"Global Alert on {self.file_association.file_name}: {self.field_name} {self.condition_type}"
-
+    def __str__(self): 
+        return f"Global Alert on {self.file_association.file_name}: {self.symbol_interval} {self.field_name} {self.condition_type}"
 
     class Meta:
         db_table = 'global_alert_rules'
+
+    def save(self, *args, **kwargs):
+        if self.field_name:
+            self.field_name = self.field_name.strip().lower()
+        super().save(*args, **kwargs)
+
+
 
 
 class CustomAlert(models.Model):
     user = models.ForeignKey(MENTUser, on_delete=models.CASCADE)
     file_association = models.ForeignKey(FileAssociation, on_delete=models.CASCADE, related_name='custom_alerts')
+    symbol_interval = models.CharField(max_length=50, null=True, blank=True)
     field_name = models.CharField(max_length=255)
-    field_type = models.CharField(max_length=50, choices=[('numeric','Numeric'),('text','Text')], default='numeric')
+    target_1_hit_at = models.DateTimeField(null=True, blank=True)
+    target_2_hit_at = models.DateTimeField(null=True, blank=True)
+    field_type = models.CharField(max_length=50, choices=[
+        ('numeric', 'Numeric'),
+        ('text', 'Text')
+    ])
     condition_type = models.CharField(max_length=50, choices=[
-        ('change','Any Change'),
-        ('increase','Increased'),
-        ('decrease','Decreased'),
-        ('equals','Equals Specific Value'),
-        ('threshold_cross','Crossed Threshold'),
+        ('change', 'Any Change'),
+        ('increase', 'Increased'),
+        ('decrease', 'Decreased'),
+        ('equals', 'Equals Specific Value'),
+        ('threshold_cross', 'Crossed Threshold'),
     ])
     compare_value = models.CharField(max_length=255, null=True, blank=True)
     last_value = models.CharField(max_length=255, null=True, blank=True)
@@ -138,10 +186,15 @@ class CustomAlert(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.user} - {self.file_association}: {self.field_name} {self.condition_type}"
+        return f"Custom Alert on :{self.file_association.file_name}: {self.symbol_interval} {self.field_name} {self.condition_type}"
 
     class Meta:
         db_table = 'custom_alerts'
+
+    def save(self, *args, **kwargs):
+        if self.field_name:
+            self.field_name = self.field_name.strip().lower()
+        super().save(*args, **kwargs)
 
 
 class TriggeredAlert(models.Model):
@@ -160,23 +213,55 @@ class TriggeredAlert(models.Model):
     )
     triggered_at = models.DateTimeField(auto_now_add=True)  
     acknowledged = models.BooleanField(default=False)  
+    message = models.TextField()  
+
+    def __str__(self):
+        return f"{self.file_association} - {self.message[:50]}"
 
     class Meta: 
         ordering = ['-triggered_at']
+
+
+class SymbolState(models.Model):
+    file_association = models.ForeignKey(
+        "ttscanner.FileAssociation",
+        on_delete=models.CASCADE,
+        related_name="symbol_states"
+    )
+    symbol = models.CharField(max_length=100)
+    last_row_data = models.JSONField(default=dict)      
+    last_price = models.FloatField(null=True, blank=True)
+    last_direction = models.CharField(max_length=100, null=True, blank=True)
+    target1_hit = models.BooleanField(default=False)
+    target2_hit = models.BooleanField(default=False)
+    last_zone = models.CharField(max_length=100, null=True, blank=True)
+    last_alerts = models.JSONField(default=dict)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("file_association", "symbol")
+        db_table = "symbol_states"
+
+    def __str__(self):
+        return f"{self.symbol} ({self.file_association.file_name})"
+
+
 
 
 class FavoriteRow(models.Model):
     user = models.ForeignKey(MENTUser, on_delete=models.CASCADE)
     file_association = models.ForeignKey(FileAssociation, on_delete=models.CASCADE)
     row_data = models.JSONField(default=dict)
-    row_hash = models.CharField(max_length=64, editable=False, default='temp_hash')
+    row_hash = models.CharField(max_length=64, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('user', 'file_association')
+        unique_together = ('user', 'file_association', 'row_hash')
 
     def save(self, *args, **kwargs):
-        self.row_data = hashlib.sha256(str(self.row_data).encode()).hexdigest()
+        if not self.row_hash:
+            self.row_hash = hashlib.sha256(str(self.row_data).encode()).hexdigest()
         super().save(*args, **kwargs)
 
 

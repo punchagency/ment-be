@@ -29,15 +29,17 @@ def import_file_association(file_id):
         changed, new_hash = is_file_changed(fa, csv_bytes)
         if changed:
             store_csv_data(fa, csv_bytes, new_hash)
+            fa.data_version += 1
+            print(f"[IMPORT] Data Version Incremented → {fa.data_version}")
             print(f"[IMPORT] Changes detected → CSV stored for {fa.file_name}")
         else:
             print(f"[IMPORT] No changes detected for {fa.file_name}")
 
         fa.last_fetched_at = timezone.now()
-        fa.save(update_fields=['last_fetched_at'])
-        print(f"[IMPORT] Updated last_fetched_at for {fa.file_name}")
-
-        check_triggered_alerts.delay(fa.id)
+        update_fields = ['last_fetched_at']
+        if changed:
+            update_fields.append('data_version')
+        fa.save(update_fields=update_fields)
 
     except Exception as e:
         print(f"[IMPORT] Error fetching/storing CSV for {fa.file_name}: {e}")

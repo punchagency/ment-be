@@ -90,6 +90,7 @@ class FileAssociation(models.Model):
     file_path = models.CharField(max_length=1024, blank=True, null=True)
     last_hash = models.CharField(max_length=128, blank=True, null=True)
     last_fetched_at = models.DateTimeField(null=True, blank=True)
+    data_version = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -220,6 +221,7 @@ class TriggeredAlert(models.Model):
 
     class Meta: 
         ordering = ['-triggered_at']
+
 
 
 class SymbolState(models.Model):

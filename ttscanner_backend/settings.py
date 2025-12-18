@@ -91,8 +91,10 @@ DATABASES = {
         'USER': 'root',                  
         'PASSWORD': 'Ment$T!T!S#2025',     
         'HOST': 'localhost',
-        'PORT': '3306',                  
+        'PORT': '3306',  
+        'CONN_MAX_AGE': 60,                
     }
+    
 }
 
 

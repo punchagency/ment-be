@@ -109,66 +109,29 @@ def parse_csv_bytes_to_dicts(csv_bytes: bytes, fa: FileAssociation, encoding='ut
     if not reader:
         return [], []
 
-    path_is_ttscanner = fa.file_path and 'ttscanner' in fa.file_path.lower()
-    content_is_ttscanner = False
-    if reader:
-        header = [h.strip().lower() for h in reader[0]]
-        if len(header) >= 5 and 'sym/int' in header[0] and 'bars since' in header[1].lower() and 'direction' in header[2] and 'entry price' in header[3] and 'target #1' in header:
-            content_is_ttscanner = True
-
-    is_ttscanner = path_is_ttscanner or content_is_ttscanner
-
-    if is_ttscanner:
-        data_rows = reader[1:] if len(reader) > 1 else []  
-        rows = []
-        for row in data_rows:
-            if len(row) >= 17:
-                parsed = {
-                    'Sym/Int': row[0].strip(),
-                    'Bars Since Entry': row[1].strip(),
-                    'Direction': row[2].strip(),
-                    'Entry Price': row[3].strip(),
-                    'Entry DateTime': row[4].strip(),
-                    'Target #1': row[5].strip(),
-                    'Target #1 DateTime': row[6].strip(),
-                    'Target #2': row[7].strip(),
-                    'Target #2 DateTime': row[8].strip(),
-                    'Stop Price': row[9].strip(),
-                    'Stop DateTime': row[10].strip(),
-                    'Profit %': row[11].strip(),
-                    'Thrust': row[12].strip(),
-                    'Profit Factor': row[13].strip(),
-                    'WinRate': row[14].strip(),
-                    'BullBear Shift': row[15].strip(),
-                    'BullBear Rank': row[16].strip(),
-                }
-                rows.append(parsed)
-
-        headers = [
-            'Sym/Int', 'Bars Since Entry', 'Direction', 'Entry Price', 'Entry DateTime',
-            'Target #1', 'Target #1 DateTime', 'Target #2', 'Target #2 DateTime',
-            'Stop Price', 'Stop DateTime', 'Profit %', 'Thrust', 'Profit Factor',
-            'WinRate', 'BullBear Shift', 'BullBear Rank'
-        ]
+    # Determine headers
+    if fa.headers:
+        headers = fa.headers
+        data_rows = reader
     else:
-        if fa.headers:
-            headers = fa.headers
-            data_rows = reader
+        first_row = reader[0]
+        alpha_count = sum(any(c.isalpha() for c in cell) for cell in first_row)
+        is_header = alpha_count / max(len(first_row), 1) >= 0.7
+
+        if is_header:
+            headers = [h.strip() if h else f"col_{i}" for i, h in enumerate(first_row)]
+            data_rows = reader[1:]
         else:
-            first_row = reader[0]
-            alpha_count = sum(any(c.isalpha() for c in cell) for cell in first_row)
-            is_header = alpha_count / max(len(first_row), 1) >= 0.7
+            headers = [f"col_{i}" for i in range(len(first_row))]
+            data_rows = reader
 
-            if is_header:
-                headers = [h.strip() if h else f"col_{i}" for i, h in enumerate(first_row)]
-                data_rows = reader[1:]
-            else:
-                headers = [f"col_{i}" for i in range(len(first_row))]
-                data_rows = reader
-
-        rows = []
-        for row in data_rows:
-            clean_row = {headers[i]: row[i].strip() if i < len(row) else "" for i in range(len(headers))}
-            rows.append(clean_row)
+    rows = []
+    for row in data_rows:
+        clean_row = {
+            headers[i]: row[i].strip() if i < len(row) else ""
+            for i in range(len(headers))
+        }
+        rows.append(clean_row)
 
     return headers, rows
+

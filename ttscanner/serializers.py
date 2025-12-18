@@ -5,7 +5,8 @@ from .models import (
     Algo, Group, Interval, 
     FileAssociation, GlobalAlertRule, 
     FavoriteRow, CustomAlert,
-    UserSettings, MENTUser
+    UserSettings, MENTUser,
+    TriggeredAlert
 )
 
 class AlgoSerializer(serializers.ModelSerializer):
@@ -408,7 +409,20 @@ class FavoriteRowSerializer(serializers.ModelSerializer):
         fields = ['row_data', 'row_hash']
 
 
-class CustomAlertSerializer(serializers.ModelSerializer):
+class TriggeredAlertSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TriggeredAlert
+        fields = '__all__'
+
+
+
+class CustomAlertCreateSerializer(serializers.ModelSerializer):
+    compare_value = serializers.CharField(
+        allow_blank=True,
+        required=False,
+        allow_null=True
+    )
+
     class Meta:
         model = CustomAlert
         fields = '__all__'
@@ -421,23 +435,108 @@ class CustomAlertSerializer(serializers.ModelSerializer):
 
         field_name = data.get("field_name")
         symbol_interval = data.get("symbol_interval")
+        compare_value = data.get("compare_value")
+        condition_type = data.get("condition_type")
 
+        # Check duplicates
         if CustomAlert.objects.filter(
             file_association=fa,
             field_name__iexact=field_name,
             symbol_interval__iexact=symbol_interval
         ).exists():
             raise serializers.ValidationError(
-                "This alert already exists for this symbol/interval."
+                f"Alert for '{symbol_interval}' → '{field_name}' already exists."
+            )
+
+        if condition_type == "change":
+            data['compare_value'] = None
+            compare_value = None
+
+        all_rows = fa.maindata.first().data_json.get("rows", [])
+        field_entries = [row.get(field_name) for row in all_rows if row.get(field_name) not in (None, "")]
+
+        def is_numeric(v):
+            try:
+                float(v)
+                return True
+            except:
+                return False
+
+        is_numeric_field = len(field_entries) > 0 and any(is_numeric(v) for v in field_entries)
+
+        if compare_value not in (None, ""):
+            if is_numeric_field and not is_numeric(compare_value):
+                raise serializers.ValidationError({
+                    "compare_value": f"'{field_name}' is numeric — compare value must be a number."
+                })
+            if not is_numeric_field and is_numeric(compare_value):
+                raise serializers.ValidationError({
+                    "compare_value": f"'{field_name}' is text — compare value cannot be numeric."
+                })
+
+        return data
+
+    def create(self, validated_data):
+        return CustomAlert.objects.create(**validated_data)
+
+
+
+class CustomAlertUpdateSerializer(serializers.ModelSerializer):
+    compare_value = serializers.CharField(
+        allow_blank=True,
+        required=False,
+        allow_null=True
+    )
+
+    class Meta:
+        model = CustomAlert
+        fields = ['field_name', 'condition_type', 'compare_value', 'symbol_interval']
+    
+    def validate(self, data):
+        field_name = data.get("field_name")
+        symbol_interval = data.get("symbol_interval")
+        compare_value = data.get("compare_value")
+        condition_type = data.get("condition_type")
+        fa = self.instance.file_association
+
+        if condition_type == "change":
+            data['compare_value'] = None
+            compare_value = None
+
+        all_rows = fa.maindata.first().data_json.get("rows", [])
+        field_entries = [row.get(field_name) for row in all_rows if row.get(field_name) not in (None, "")]
+
+        def is_numeric(v):
+            try:
+                float(v)
+                return True
+            except:
+                return False
+
+        is_numeric_field = len(field_entries) > 0 and any(is_numeric(v) for v in field_entries)
+
+        if compare_value not in (None, ""):
+            if is_numeric_field and not is_numeric(compare_value):
+                raise serializers.ValidationError({
+                    "compare_value": f"'{field_name}' is numeric — compare value must be a number."
+                })
+            if not is_numeric_field and is_numeric(compare_value):
+                raise serializers.ValidationError({
+                    "compare_value": f"'{field_name}' is text — compare value cannot be numeric."
+                })
+
+        if CustomAlert.objects.filter(
+            file_association=fa,
+            field_name__iexact=field_name,
+            symbol_interval__iexact=symbol_interval
+        ).exclude(id=self.instance.id).exists():
+            raise serializers.ValidationError(
+                f"Alert for '{symbol_interval}' → '{field_name}' already exists."
             )
 
         return data
 
 
-class CustomAlertUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CustomAlert
-        fields = ['field_name', 'field_type', 'condition_type', 'compare_value']
 
 class UserSettingsSerializer(serializers.ModelSerializer):
     class Meta:

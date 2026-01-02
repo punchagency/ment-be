@@ -151,9 +151,9 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
 # CORS
-CORS_ALLOW_ALL_ORIGINS = True
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5174")
+CORS_ALLOW_ALL_ORIGINS = False
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
 CORS_ALLOWED_ORIGINS = [
-    os.getenv("FRONTEND_BASE_URL", "http://localhost:5174"),
+    os.getenv("FRONTEND_BASE_URL", "http://localhost:5173"),
 ]
 

@@ -1,4 +1,5 @@
 from itertools import chain
+from django.forms import ValidationError
 from rest_framework.response import Response
 from django.http import StreamingHttpResponse
 from rest_framework.views import APIView
@@ -18,7 +19,7 @@ from .serializers import (
 from  rest_framework import status
 from rest_framework import generics
 from .utils.csv_utils import fetch_ftp_bytes, parse_csv_bytes_to_dicts
-import time, json, hashlib
+import time, json, hashlib, re
 
 
 
@@ -152,14 +153,59 @@ class CSVHeaderView(generics.GenericAPIView):
         if 'ttscanner' in fa.file_name.lower():
             headers = [
                 header
-                for header in fa.headers[1:]
+                for header in fa.headers[1: ]
                 if 'datetime' not in header.lower()
+                if 'color' not in header.lower()
             ]
         else:
-            headers = fa.headers[1:]
+            headers = fa.headers[1: ]
+        # print(f"Headers [1: ]: {headers[1:]}")
+        # print(f"\n Headers: {headers}")
         return Response(headers, status=status.HTTP_200_OK)
 
-                    
+
+
+class SymIntListView(generics.ListAPIView):
+    queryset = MainData.objects.all()
+
+    def find_sym_int_column(self, headers):
+        for h in headers:
+            normalized = (
+                str(h).lower()
+                .replace(" ", "")
+                .replace("_", "")
+                .replace("-", "")
+                .replace("/", "")
+            )
+            if "sym" in normalized and "int" in normalized:
+                return h
+        return None
+    
+    def get(self, request, pk):
+        try:
+            fa = FileAssociation.objects.get(id = pk)
+        except FileAssociation.DoesNotExist:
+            return Response({"detail": "File Association Does Not Exist"},status=status.HTTP_404_NOT_FOUND)
+        main_data = MainData.objects.filter(file_association=fa).first()
+
+        if not main_data:
+            return Response({"detail": "MainData not found for this FileAssociation"}, status=404)
+        
+        sym_int_key = self.find_sym_int_column(fa.headers)
+        print(sym_int_key)
+        if not sym_int_key:
+            return Response({"details ":'Could not detect Symbol/Interval column'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        all_rows = main_data.data_json.get("rows", [])
+        valid_sym_int_values = {
+            str(row.get(sym_int_key, ""))
+            for row in all_rows if sym_int_key in row
+        }
+        print(valid_sym_int_values)
+
+        return Response(valid_sym_int_values, status=200)
+
+
 class SortCSVView(generics.GenericAPIView):
     def convert_for_sort(self, value, direction):
         if value is None or value == "":
@@ -208,29 +254,61 @@ class SortCSVView(generics.GenericAPIView):
         })
 
 
-
-class FavoriteRowView(generics.CreateAPIView):
-    serializer_class = FavoriteRowSerializer
-
+class FavoriteRowView(APIView):
     def post(self, request, pk):
+        external_user_id = request.data.get("external_user_id")
+        sym_int_value = request.data.get("sym_int")
+
+        if not external_user_id or not sym_int_value:
+            return Response(
+                {"detail": "Missing external_user_id or Sym/Int"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         fa = get_object_or_404(FileAssociation, id=pk)
-        external_user_id = request.data.get('external_user_id')
+        main_data = get_object_or_404(MainData, file_association=fa)
         user = get_object_or_404(MENTUser, external_user_id=external_user_id)
-        print(fa.headers)
-        row_data = {k: v for k, v in request.data.items() if k != "external_user_id"}
-        row_hash = hashlib.sha256(str(row_data).encode()).hexdigest()
 
-        if FavoriteRow.objects.filter(user=user, file_association=fa, row_hash=row_hash).exists():
-            return Response({'details': 'Already Added to Favorites'}, status=400)
+        matching_row = None
+        sym_int_value = str(sym_int_value).lower().strip()
 
-        favorite = FavoriteRow.objects.create(
+        pattern = re.compile(r"sym.*int|symbol.*interval")
+
+        for row in main_data.data_json.get("rows", []):
+            for key, value in row.items():
+                if value is None:
+                    continue
+                key_normalized = re.sub(r"[ _/]", "", key.lower())
+
+                if pattern.search(key_normalized):
+                    if str(value).lower().strip() == sym_int_value:
+                        matching_row = row
+                        break
+            if matching_row:
+                break
+
+        if not matching_row:
+            return Response(
+                {"detail": "Row not found in MainData"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        favorite, created = FavoriteRow.objects.get_or_create(
             user=user,
             file_association=fa,
-            row_data=row_data,
-            row_hash=row_hash
+            row_id=matching_row["_row_id"],
+            defaults={"row_hash": matching_row["_row_hash"]}
         )
 
-        return Response({'details': 'Row added in Favorite Page', 'favorite_id': favorite.id}, status=201)
+        return Response(
+            {
+                "favorite_id": favorite.id,
+                "row_id": matching_row["_row_id"],
+                "row_hash": matching_row["_row_hash"],
+                "created": created
+            },
+            status=status.HTTP_201_CREATED
+        )
 
 
 class DeleteFavoriteView(generics.DestroyAPIView):
@@ -241,9 +319,10 @@ class DeleteFavoriteView(generics.DestroyAPIView):
         instance = self.get_object()
         instance_id = instance.id
         instance.delete()
-        return Response({"details": f"Successfuly Deleted Favorite Row ID #{instance_id}" }, 
-        status=status.HTTP_200_OK)
-
+        return Response(
+            {"details": f"Successfully deleted Favorite Row ID #{instance_id}"},
+            status=status.HTTP_200_OK
+        )
 
 
 class FavoriteRowListView(APIView):
@@ -251,13 +330,13 @@ class FavoriteRowListView(APIView):
         try:
             user = MENTUser.objects.get(external_user_id=external_user_id)
         except MENTUser.DoesNotExist:
-            return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "User not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        favorites = (
-            FavoriteRow.objects
-            .filter(user=user)
-            .select_related("file_association")
-        )
+        favorites = FavoriteRow.objects.filter(user=user).select_related("file_association")
+        print(favorites)
 
         if not favorites.exists():
             return Response([], status=200)
@@ -266,6 +345,18 @@ class FavoriteRowListView(APIView):
 
         for fav in favorites:
             fa = fav.file_association
+            main_data = MainData.objects.filter(file_association=fa).first()
+            if not main_data:
+                continue
+
+            matching_row = None
+            for row in main_data.data_json.get("rows", []):
+                if row.get("_row_id") == fav.row_id:
+                    matching_row = row
+                    break
+
+            if not matching_row:
+                continue
 
             if fa.id not in grouped:
                 grouped[fa.id] = {
@@ -275,33 +366,15 @@ class FavoriteRowListView(APIView):
                     "rows": []
                 }
 
-            row = {
-                h: fav.row_data.get(h)
-                for h in fa.headers
-                if not h.startswith("_")
-            }
-            row["favorite_id"] = fav.id
-            row["row_hash"] = fav.row_hash
-            print(row["row_hash"])
+            row_data = {h: matching_row.get(h) for h in fa.headers if not h.startswith("_")}
+            row_data["favorite_id"] = fav.id
+            row_data["row_id"] = fav.row_id
+            row_data["row_hash"] = matching_row.get("_row_hash")
 
-            grouped[fa.id]["rows"].append(row)
-          #  print(list(grouped.values()))
+            grouped[fa.id]["rows"].append(row_data)
 
         return Response(list(grouped.values()), status=200)
 
-
-# class FavoriteRowDetailView(generics.ListAPIView):
-#     queryset = FavoriteRow.objects.all()
-#     serializer_class = FavoriteRowSerializer
-#     lookup_field = 'row_hash'
-
-#     def get(self, request, *args, **kwargs):
-#         row_hash = kwargs.get("row_hash")
-#         row = self.get_queryset().filter(row_hash=row_hash).first()
-#         if not row:
-#             return Response({"error": "Row not found"}, status=404)
-#         serializer = self.get_serializer(row)
-#         return Response(serializer.data)
 
 
 class CustomAlertView(generics.ListAPIView):
@@ -360,30 +433,26 @@ class CustomAlertDeleteView(generics.DestroyAPIView):
         status=status.HTTP_200_OK)
 
 
-# class UserTriggeredAlertsView(APIView):
-#     def get(self, request, *args, **kwargs):
-#         user = self.kwargs.get("external_user_id") 
-#         global_alerts = TriggeredAlert.objects.filter(global_alert__isnull=False)
-
-#         custom_alerts = TriggeredAlert.objects.filter(
-#             custom_alert__isnull=False,
-#             custom_alert__user=user 
-#         )
-#         alerts = global_alerts.union(custom_alerts).order_by('-triggered_at')
-
-#         serializer = TriggeredAlertSerializer(alerts, many=True)
-#         return Response(serializer.data)
-
 
 class UserTriggeredAlertsView(APIView):
     def get(self, request, *args, **kwargs):
         external_user_id = self.kwargs.get("external_user_id")
-        user = MENTUser.objects.get(external_user_id=external_user_id) 
+        user = MENTUser.objects.get(external_user_id=external_user_id)
 
-        global_alerts = TriggeredAlert.objects.filter(global_alert__isnull=False)
-        custom_alerts = TriggeredAlert.objects.filter(custom_alert__isnull=False, custom_alert__user=user)
+        global_alerts = TriggeredAlert.objects.filter(
+            alert_source="global"
+        )
 
-        alerts = list(chain(global_alerts, custom_alerts))
+        custom_alerts = TriggeredAlert.objects.filter(
+            alert_source="custom",
+            custom_alert__user=user
+        )
+
+        system_alerts = TriggeredAlert.objects.filter(
+            alert_source="system"
+        )
+
+        alerts = list(chain(system_alerts, global_alerts, custom_alerts))
         alerts.sort(key=lambda a: a.triggered_at, reverse=True)
 
         serializer = TriggeredAlertSerializer(alerts, many=True)
@@ -415,38 +484,32 @@ class UpdateUserSettingsView(generics.UpdateAPIView):
         external_user_id = self.kwargs.get("pk")
 
         if not external_user_id:
-            return Response(
-                {"detail": "External user ID is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise ValidationError("External user ID is required")
 
-        try:
-            user = MENTUser.objects.get(external_user_id=external_user_id)
-        except MENTUser.DoesNotExist:
-            return Response(
-                {"detail": "User not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        user, _ = MENTUser.objects.get_or_create(
+            external_user_id=external_user_id
+        )
+        print(user)
 
-        try:
-            return UserSettings.objects.get(user=user)
-        except UserSettings.DoesNotExist:
-            return Response(
-                {"detail": "User settings not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        settings, _ = UserSettings.objects.get_or_create(
+            user=user,
+            defaults={
+                "alerts_enabled": False,
+                "delivery_methods": [],
+                "alert_email": None,
+                "alert_phone": None,
+            }
+        )
+        print(settings)
+
+        return settings
 
     def patch(self, request, *args, **kwargs):
         instance = self.get_object()
-        if isinstance(instance, Response):
-            return instance
-
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-
         return Response(serializer.data, status=status.HTTP_200_OK)
-
 
 
 class UserSettingsView(generics.ListAPIView):
@@ -461,7 +524,6 @@ class UserSettingsView(generics.ListAPIView):
         user_settings = UserSettings.objects.filter(user=user)
         serializer = self.get_serializer(user_settings, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
 
 
 class AlgoGroupsView(APIView):
@@ -512,54 +574,61 @@ class FileAssociationLookupView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Get Algo
-        try:
-            algo = Algo.objects.get(pk=algo_id)
-        except Algo.DoesNotExist:
-            return Response({"detail": "Algo not found."}, status=status.HTTP_404_NOT_FOUND)
+        algo = get_object_or_404(Algo, pk=algo_id)
+        interval = get_object_or_404(Interval, pk=interval_id)
 
-        # Get Interval
-        try:
-            interval = Interval.objects.get(pk=interval_id)
-        except Interval.DoesNotExist:
-            return Response({"detail": "Interval not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        # Get FileAssociation based on group
         if group_id in (None, "", "null", "none"):
-            fa = FileAssociation.objects.filter(algo=algo, interval=interval, group__isnull=True).first()
+            fa = FileAssociation.objects.filter(
+                algo=algo,
+                interval=interval,
+                group__isnull=True
+            ).first()
         else:
-            try:
-                group = Group.objects.get(pk=group_id)
-            except Group.DoesNotExist:
-                return Response({"detail": "Group not found."}, status=status.HTTP_404_NOT_FOUND)
-            fa = FileAssociation.objects.filter(algo=algo, interval=interval, group=group).first()
+            group = get_object_or_404(Group, pk=group_id)
+            fa = FileAssociation.objects.filter(
+                algo=algo,
+                interval=interval,
+                group=group
+            ).first()
 
         if not fa:
-            return Response({"detail": "No file association for the provided combination."},
-                            status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "No file association for the provided combination."},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        # Fetch data from MainData table
         main_data = MainData.objects.filter(file_association=fa).first()
         if not main_data:
-            return Response({"detail": "No data found for this FileAssociation."},
-                            status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "No data found for this FileAssociation."},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        # Get headers and rows
         headers = main_data.data_json.get("headers", [])
         rows = main_data.data_json.get("rows", [])
 
-        # Apply backend filtering while preserving header order
-        cleaned_rows = [
-            {h: row[h] for h in headers if not h.startswith("_")}
-            for row in rows[1:] 
-        ]
+        cleaned_rows = []
+        for row in rows:
+            safe_row = {}
 
-        return Response({
-            "file_association_id": fa.id,
-            "data_version": fa.data_version,
-            "headers": headers,
-            "rows": cleaned_rows
-        }, status=200)
+            for h in headers:
+                if not h.startswith("_"):
+                    safe_row[h] = row.get(h)
+
+            safe_row["_row_hash"] = row.get("_row_hash")
+
+            cleaned_rows.append(safe_row)
+
+        return Response(
+            {
+                "file_association_id": fa.id,
+                "data_version": fa.data_version,
+                "headers": headers,
+                "rows": cleaned_rows
+            },
+            status=200
+        )
+
 
 
 def sse_user_alerts(request, external_user_id):
@@ -691,3 +760,7 @@ def sse_file_updates(request, pk):
     response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
     response['Cache-Control'] = 'no-cache'
     return response
+
+
+
+

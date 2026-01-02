@@ -1,3 +1,4 @@
+from django.http import JsonResponse
 from django.urls import path
 from .views import (
     FileAssociationCreateView, CSVUploadView, 
@@ -10,20 +11,21 @@ from .views import (
     IntervalListView, IntervalCreateView,
     IntervalUpdateView, IntervalDeleteView,
     AlgoCreateView, AlgoUpdateView, 
-    AlgoDeleteView, SymIntListView,
-    UserRoleView, send_announcement
+    AlgoDeleteView, TriggeredAlertsAdminView
 )
 from .regular_user_views import(
     CSVListView, FilterCSVView,
-    CSVHeaderView, SortCSVView,
-    FavoriteRowView, CustomAlertCreateView,
-    CustomAlertUpdateView, CustomAlertDeleteView,
-    UserSettingsCreateView, UpdateUserSettingsView,
-    UserSettingsView, AlgoGroupsView, 
-    AlgoGroupIntervalsView, FileAssociationLookupView, 
-    FavoriteRowListView, DeleteFavoriteView,
-    CustomAlertView, UserTriggeredAlertsView
+    CSVHeaderView, SymIntListView,
+    SortCSVView, FavoriteRowView, 
+    CustomAlertCreateView, CustomAlertUpdateView, 
+    CustomAlertDeleteView, UserSettingsCreateView, 
+    UpdateUserSettingsView,UserSettingsView, 
+    AlgoGroupsView, AlgoGroupIntervalsView, 
+    FileAssociationLookupView, FavoriteRowListView, 
+    DeleteFavoriteView, CustomAlertView, 
+    UserTriggeredAlertsView
 )
+from .fbv_views import announcement_log, send_announcement, login, logout_view
 from ttscanner import regular_user_views
 
 urlpatterns = [
@@ -52,26 +54,31 @@ urlpatterns = [
     path('global-alert/update/<int:pk>/', GlobalAlertUpdateView.as_view(), name='ga-update'),
     path('global-alert/delete/<int:pk>/', GlobalAlertDeleteView.as_view(), name='ga-delete'),
     path('global-alert/all/', GlobalAlertListView.as_view(), name='ga-all'),
-    # path('target-hit/<int:pk>/', CSVTargetHitView.as_view(), name='target-hit'),
+    path('alert-logs/admin/', TriggeredAlertsAdminView.as_view(), name='alert-logs-admin'),
     path('csv-data/<int:pk>/', CSVListView.as_view(), name='csv-data'),
     path('filter-csv/<int:pk>/', FilterCSVView.as_view(), name='filter-csv'),
     path('csv-headers/<int:pk>/', CSVHeaderView.as_view(), name='csv-headers'),
     path('sym-int/<int:pk>/', SymIntListView.as_view(), name='sym-int'),
     path('sort-csv/<int:pk>/', SortCSVView.as_view(), name='sort-csv'),
 
-    path('fav-row/<int:pk>/', FavoriteRowView.as_view(), name='fav-row'),
+    path('fav-row/create/<int:pk>/', FavoriteRowView.as_view(), name='fav-row'),
     path('fav-row/delete/<int:pk>/', DeleteFavoriteView.as_view(), name='fav-row-delete'),
-    path('fav-row-list/<int:external_user_id>/', FavoriteRowListView.as_view(), name='fav-row-all'),  
- #   path('fav-row-detail/<str:row_hash>/', FavoriteRowDetailView.as_view(), name='fav-row-detail'),  
+    path('fav-row-list/<int:external_user_id>/', FavoriteRowListView.as_view(), name='fav-row-all'),   
     path('sse/<int:pk>/', regular_user_views.sse_file_updates, name='sse_file_updates'),  
     path('user-alert/sse/<int:external_user_id>/', regular_user_views.sse_user_alerts, name='sse_user_alerts'),   
-    path("announcement/send/", send_announcement),
+    
+
+    path('announcement/send/', send_announcement, name='send_announcement'),
+    path('announcement/log/', announcement_log, name='announcement_log'),
+    path("auth/login/", login, name='login'),
+    path('logout/', logout_view, name='logout'),
+
     path('custom-alert/all/<int:external_user_id>/', CustomAlertView.as_view(), name='ca-all'),
     path('custom-alert/create/<int:external_user_id>/', CustomAlertCreateView.as_view(), name='ca-create'),
     path('custom-alert/update/<int:pk>/', CustomAlertUpdateView.as_view(), name='ca-update'),
     path('custom-alert/delete/<int:pk>/', CustomAlertDeleteView.as_view(), name='ca-update'),
     path('alert-logs/<int:external_user_id>/', UserTriggeredAlertsView.as_view(), name='alert-logs'),
-    path("me/", UserRoleView.as_view(), name="current-user"),
+
     path('settings/<int:external_user_id>/', UserSettingsView.as_view(), name='settings'),
     path('settings/create/<int:pk>/', UserSettingsCreateView.as_view(), name='create-settings'),
     path('settings/update/<int:pk>/', UpdateUserSettingsView.as_view(), name='update-settings'),

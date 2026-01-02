@@ -1,13 +1,25 @@
 from django.db import models
-import re
+import re, json, uuid, hashlib
+from django.db import transaction
 from django.core.exceptions import ValidationError
-import hashlib
+from django.contrib.auth.hashers import make_password, check_password
 
 class MENTUser(models.Model):
     external_user_id = models.IntegerField(unique=True)
-    role = models.CharField(max_length=10, choices=[('admin', 'Admin'), ('regular','Regular')])
+    username = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    password = models.CharField(max_length=128, null=True, blank=True) 
+    role = models.CharField(
+        max_length=10,
+        choices=[('admin', 'Admin'), ('regular', 'Regular')]
+    )
     email = models.EmailField(null=True, blank=True)
     phone = models.CharField(max_length=30, null=True, blank=True)
+
+    def set_password(self, raw_password):
+        self.password = make_password(raw_password)
+
+    def check_password(self, raw_password):
+        return check_password(raw_password, self.password)
 
 
 class Algo(models.Model):
@@ -32,6 +44,12 @@ class Group(models.Model):
 
     def __str__(self):
         return self.group_name
+    
+    def set_password(self, raw_password):
+        self.password = make_password(raw_password)
+
+    def check_password(self, raw_password):
+        return check_password(raw_password, self.password)
 
     class Meta:
         db_table = 'groups'
@@ -127,8 +145,42 @@ class MainData(models.Model):
     data_json = models.JSONField(default=dict)
     last_updated = models.DateTimeField(auto_now=True)
 
+    def save(self, *args, **kwargs):
+        if self.data_json.get("rows"):
+            for row in self.data_json["rows"]:
+                if "_row_id" not in row:
+                    row["_row_id"] = str(uuid.uuid4())
+                row["_row_hash"] = self.compute_row_hash(row)
+
+        super().save(*args, **kwargs)
+
+        with transaction.atomic():
+            for row in self.data_json.get("rows", []):
+                if "_row_id" in row and "_row_hash" in row:
+                    FavoriteRow.objects.filter(
+                        file_association=self.file_association,
+                        row_id=row["_row_id"]
+                    ).update(row_hash=row["_row_hash"])
+
+    @staticmethod
+    def compute_row_hash(row: dict) -> str:
+        normalized_row = {str(k).strip(): v for k, v in row.items() if k != "_row_hash"}
+        json_str = json.dumps(normalized_row, sort_keys=True)
+        return hashlib.sha256(json_str.encode()).hexdigest()
+
+
+
+
+class FavoriteRow(models.Model):
+    user = models.ForeignKey(MENTUser, on_delete=models.CASCADE, related_name='user')
+    file_association = models.ForeignKey(FileAssociation, on_delete=models.CASCADE)
+    row_id = models.CharField(max_length=36, null=True, blank=True)  
+    row_hash = models.CharField(max_length=64, null=True, blank=True) 
+    created_at = models.DateTimeField(auto_now_add=True)
+
     class Meta:
-        db_table = 'main_data'
+        unique_together = ('user', 'row_id', 'file_association')
+
 
 
 class GlobalAlertRule(models.Model):
@@ -170,10 +222,6 @@ class CustomAlert(models.Model):
     field_name = models.CharField(max_length=255)
     target_1_hit_at = models.DateTimeField(null=True, blank=True)
     target_2_hit_at = models.DateTimeField(null=True, blank=True)
-    field_type = models.CharField(max_length=50, choices=[
-        ('numeric', 'Numeric'),
-        ('text', 'Text')
-    ])
     condition_type = models.CharField(max_length=50, choices=[
         ('change', 'Any Change'),
         ('increase', 'Increased'),
@@ -198,8 +246,21 @@ class CustomAlert(models.Model):
         super().save(*args, **kwargs)
 
 
+
 class TriggeredAlert(models.Model):
+    ALERT_SOURCE_CHOICES = [
+        ("system", "System"),
+        ("global", "Global"),
+        ("custom", "Custom"),
+    ]
+
     file_association = models.ForeignKey(FileAssociation, on_delete=models.CASCADE)
+
+    alert_source = models.CharField(
+        max_length=10,
+        choices=ALERT_SOURCE_CHOICES
+    )
+
     global_alert = models.ForeignKey(
         GlobalAlertRule,
         on_delete=models.CASCADE,
@@ -212,15 +273,39 @@ class TriggeredAlert(models.Model):
         null=True,
         blank=True
     )
-    triggered_at = models.DateTimeField(auto_now_add=True)  
-    acknowledged = models.BooleanField(default=False)  
-    message = models.TextField()  
 
-    def __str__(self):
-        return f"{self.file_association} - {self.message[:50]}"
+    triggered_at = models.DateTimeField(auto_now_add=True)
+    acknowledged = models.BooleanField(default=False)
+    message = models.TextField()
 
-    class Meta: 
-        ordering = ['-triggered_at']
+    class Meta:
+        ordering = ["-triggered_at"]
+
+
+
+# class TriggeredAlert(models.Model):
+#     file_association = models.ForeignKey(FileAssociation, on_delete=models.CASCADE)
+#     global_alert = models.ForeignKey(
+#         GlobalAlertRule,
+#         on_delete=models.CASCADE,
+#         null=True,
+#         blank=True
+#     )
+#     custom_alert = models.ForeignKey(
+#         CustomAlert,
+#         on_delete=models.CASCADE,
+#         null=True,
+#         blank=True
+#     )
+#     triggered_at = models.DateTimeField(auto_now_add=True)  
+#     acknowledged = models.BooleanField(default=False)  
+#     message = models.TextField()  
+
+#     def __str__(self):
+#         return f"{self.file_association} - {self.message[:50]}"
+
+#     class Meta: 
+#         ordering = ['-triggered_at']
 
 
 
@@ -249,24 +334,6 @@ class SymbolState(models.Model):
         return f"{self.symbol} ({self.file_association.file_name})"
 
 
-
-
-class FavoriteRow(models.Model):
-    user = models.ForeignKey(MENTUser, on_delete=models.CASCADE)
-    file_association = models.ForeignKey(FileAssociation, on_delete=models.CASCADE)
-    row_data = models.JSONField(default=dict)
-    row_hash = models.CharField(max_length=64, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ('user', 'file_association', 'row_hash')
-
-    def save(self, *args, **kwargs):
-        if not self.row_hash:
-            self.row_hash = hashlib.sha256(str(self.row_data).encode()).hexdigest()
-        super().save(*args, **kwargs)
-
-
 class UserSettings(models.Model):
     DELIVERY_CHOICES = ['dashboard', 'email', 'sms']
 
@@ -278,3 +345,16 @@ class UserSettings(models.Model):
     alert_phone = models.CharField(max_length=30, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class Announcement(models.Model):
+    message = models.TextField()
+    type = models.CharField(max_length=20, choices=[
+        ("Email", "Email"),
+        ("SMS", "SMS"),
+        ("Email & SMS", "Email & SMS")
+    ])
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.type} Announcement at {self.created_at.strftime('%Y-%m-%d %H:%M')}"

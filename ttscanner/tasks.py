@@ -1,13 +1,14 @@
 from celery import shared_task
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
-import logging
-
+import logging, re
+from django.conf import settings
 from ttscanner.models import FileAssociation, MENTUser, UserSettings, TriggeredAlert
 from ttscanner.utils.csv_utils import fetch_ftp_bytes, is_file_changed, store_csv_data
 from ttscanner.engine.evaluator import lookup_any, process_row_for_alerts
 from ttscanner.utils.email_utils import send_alert_email
 from ttscanner.utils.sms_utils import send_alert_sms
+from ttscanner.utils.text_utils import html_to_plain_text
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,8 @@ def import_file_association(file_id):
             print(f"[IMPORT] Changes detected → CSV stored for {fa.file_name}")
         else:
             print(f"[IMPORT] No changes detected for {fa.file_name}")
+        
+        check_triggered_alerts.delay(fa.id)
 
         fa.last_fetched_at = timezone.now()
         update_fields = ['last_fetched_at']
@@ -106,9 +109,8 @@ def send_alert_emails(triggered_alerts):
 
 
 def send_sms_notifications(triggered_alerts):
-    """Send SMS notifications for triggered alerts, including system-generated alerts."""
+    """Send SMS notifications for triggered alerts."""
     for ta in triggered_alerts:
-        fa = ta.file_association
         message = ta.message
         recipients = []
 
@@ -125,12 +127,11 @@ def send_sms_notifications(triggered_alerts):
                 phone = user.phone
                 methods = []
 
-            if phone and ('sms' in methods or 'all' in methods):
+            if phone and ("sms" in methods or "all" in methods):
                 try:
                     send_alert_sms(phone, message)
-                    print(f"[SMS] Sent to {phone}")
                 except Exception as e:
-                    print(f"[SMS] Failed to send to {phone}: {e}")
+                    logger.error(f"Failed to send SMS to {phone}: {e}")
 
 
 
@@ -168,8 +169,11 @@ def should_trigger(alert, raw_value):
 
 
 def evaluate_global_custom_alerts(fa, rows):
-    """Return list of TriggeredAlert objects for global/custom alerts."""
     triggered = []
+
+    if getattr(fa, "data_version", 0) == 0:
+        print(f"[GC ALERTS] Skipping alerts for {fa.file_name} → data_version = 0")
+        return []
 
     try:
         all_alerts = list(fa.global_alerts.all()) + list(fa.custom_alerts.all())
@@ -177,22 +181,27 @@ def evaluate_global_custom_alerts(fa, rows):
         all_alerts = []
 
     if not rows or not all_alerts:
+        print(f"[GC ALERTS] No rows or alerts to evaluate for {fa.file_name}")
         return []
 
-    first_row = rows[0]
-    symbol_key = lookup_any(first_row, ["Symbol/Interval", "Symbol", "sym/int", "sym", "Ticker", "symbol"])
-
-    if not symbol_key:
-        print("[GC ALERTS] No valid symbol column found. Skipping evaluation.")
-        return []
-
+    possible_symbol_keys = ["Symbol/Interval", "Symbol", "sym/int", "sym", "Ticker", "symbol"]
+    
     for row in rows:
+        normalized_keys = {re.sub(r"[\/_\-\s]", "", k.lower()): k for k in row.keys() if k}
+        symbol_key = next(
+            (v for k, v in normalized_keys.items() if k in [re.sub(r"[\/_\-\s]", "", s.lower()) for s in possible_symbol_keys]),
+            None
+        )
+        if not symbol_key:
+            continue
+
         row_sym = str(row.get(symbol_key, "")).strip().upper()
         if not row_sym:
             continue
 
-        for alert in all_alerts:
+        alerts_to_update = []
 
+        for alert in all_alerts:
             row_value = row.get(alert.field_name)
             if row_value is None:
                 continue
@@ -202,12 +211,11 @@ def evaluate_global_custom_alerts(fa, rows):
                 continue
 
             if should_trigger(alert, row_value):
-
-                msg = f"{'GLOBAL' if hasattr(alert, 'is_global') else 'CUSTOM'} alert for {row_sym} → {alert.field_name}: {row_value}"
-
+                msg = f"{'GLOBAL' if getattr(alert, 'is_global', False) else 'CUSTOM'} alert for {row_sym} → {alert.field_name}: {row_value}"
                 triggered.append(
                     TriggeredAlert(
                         file_association=fa,
+                        alert_source="global" if getattr(alert, "is_global", False) else "custom",
                         global_alert=alert if getattr(alert, "is_global", False) else None,
                         custom_alert=alert if getattr(alert, "is_custom", False) else None,
                         message=msg
@@ -216,12 +224,19 @@ def evaluate_global_custom_alerts(fa, rows):
 
                 alert.last_value = row_value
                 alert.is_active = False
-                alert.save(update_fields=['last_value', 'is_active'])
+                alerts_to_update.append(alert)
+
+        if alerts_to_update:
+            type(alerts_to_update[0]).objects.bulk_update(alerts_to_update, ["last_value", "is_active"])
 
     if triggered:
         TriggeredAlert.objects.bulk_create(triggered)
+        print(f"[GC ALERTS] {len(triggered)} alerts triggered for {fa.file_name}")
+    else:
+        print(f"[GC ALERTS] No alerts triggered for {fa.file_name}")
 
     return triggered
+
 
 
 @shared_task
@@ -236,6 +251,7 @@ def check_triggered_alerts(file_id):
     print(f"[ALERT] Evaluating alerts for {fa.file_name}")
 
     triggered_list = []
+    rows = []
 
     if getattr(fa, "algo", None):
         main_data = fa.maindata.first()
@@ -266,6 +282,12 @@ def check_triggered_alerts(file_id):
 
 @shared_task
 def send_announcement_sms_task(message):
+    """Send announcement SMS to all users with phones."""
+
+    if getattr(settings, "ENVIRONMENT", "development") != "production":
+        print(f"[DEV MODE] SMS not sent. Message preview:\n{message}")
+        return {"sent": 0, "failed": 0, "total": 0}
+    
     users = MENTUser.objects.exclude(phone__isnull=True).exclude(phone__exact="")
     phones = [user.phone for user in users]
 
@@ -273,36 +295,33 @@ def send_announcement_sms_task(message):
         logger.warning("No users with phone numbers found for announcement SMS.")
         return {"sent": 0, "failed": 0, "total": 0}
 
-
     try:
-        sent_count, failed_count = send_alert_sms(phones, message)
+        plain_message = html_to_plain_text(message)
+        logger.warning(f"Plain Message being sent:\n{plain_message}")
+
+        sent_count, failed_count = send_alert_sms(
+            phones,
+            plain_message,
+            force_send=False 
+        )
+
+        logger.info(
+            f"Announcement SMS sent: {sent_count}, failed: {failed_count}, total: {len(phones)}"
+        )
+
+        return {
+            "sent": sent_count,
+            "failed": failed_count,
+            "total": len(phones)
+        }
+
     except Exception as e:
         logger.error(f"Bulk SMS sending failed: {e}")
-        sent_count = 0
-        failed_count = 0
-        for phone in phones:
-            try:
-                s, f = send_alert_sms(phone, message, force_send=False)
-                sent_count += s
-                failed_count += f
-            except Exception as ex:
-                logger.error(f"Failed to send SMS to {phone}: {ex}")
-                failed_count += 1
-
-    logger.info(f"Announcement SMS sent: {sent_count}, failed: {failed_count}, total: {len(phones)}")
-
-    return {
-        "sent": sent_count,
-        "failed": failed_count,
-        "total": len(phones)
-    }
-
-
-
-
-
-
-
+        return {
+            "sent": 0,
+            "failed": len(phones),
+            "total": len(phones)
+        }
 
 
 

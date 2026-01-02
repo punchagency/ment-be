@@ -11,7 +11,8 @@ from .models import (
     TriggeredAlert,
     FavoriteRow,
     UserSettings,
-    SymbolState
+    SymbolState,
+    Announcement
 )
 
 @admin.register(MENTUser)
@@ -35,7 +36,6 @@ class IntervalAdmin(admin.ModelAdmin):
     list_display = ('interval_name', 'interval_minutes', 'created_at')
     search_fields = ('interval_name',)
 
-
 @admin.register(FileAssociation)
 class FileAssociationAdmin(admin.ModelAdmin):
     list_display = ('file_name', 'algo', 'group', 'interval', 'file_path', 'created_at')
@@ -44,8 +44,13 @@ class FileAssociationAdmin(admin.ModelAdmin):
 
 @admin.register(MainData)
 class MainDataAdmin(admin.ModelAdmin):
-    list_display = ('file_association', 'last_updated')
+    list_display = ('file_association', 'last_updated', 'data_json')
     search_fields = ('file_association__file_name',)
+
+@admin.register(FavoriteRow)
+class FavoriteRowAdmin(admin.ModelAdmin):
+    list_display = ('user', 'file_association', 'row_hash')
+    search_fields = ('user', 'file_association')
 
 @admin.register(GlobalAlertRule)
 class GlobalAlertRuleAdmin(admin.ModelAdmin):
@@ -64,11 +69,6 @@ class TriggeredAlertAdmin(admin.ModelAdmin):
     list_display = ('file_association', 'global_alert', 'custom_alert', 'triggered_at')
     search_fields = ('file_association', 'global_alert', 'custom_alert')
 
-@admin.register(FavoriteRow)
-class FavoriteRowAdmin(admin.ModelAdmin):
-    list_display = ('user', 'file_association', 'row_data', 'row_hash')
-    search_fields = ('user', 'file_association', 'row_data')
-
 @admin.register(UserSettings)
 class UserSettingsAdmin(admin.ModelAdmin):
     list_display = ('user', 'theme', 'alerts_enabled', 'delivery_methods', 'alert_email', 'alert_phone')
@@ -78,3 +78,7 @@ class UserSettingsAdmin(admin.ModelAdmin):
 class SymbolStateAdmin(admin.ModelAdmin):
     list_display = ('file_association', 'symbol', 'last_row_data', 'last_price', 'last_direction', 'target1_hit' , 'target2_hit', 'last_zone',
                     'last_alerts', 'updated_at')
+    
+@admin.register(Announcement)
+class AnnouncementAdmin(admin.ModelAdmin):
+    list_display = ('message', 'type', 'created_at')

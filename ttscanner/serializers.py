@@ -422,6 +422,7 @@ class CustomAlertCreateSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = CustomAlert
@@ -487,6 +488,7 @@ class CustomAlertUpdateSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = CustomAlert

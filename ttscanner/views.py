@@ -4,7 +4,11 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status
 from django.utils import timezone
 from rest_framework import generics
-from .models import FileAssociation, GlobalAlertRule, Algo, Group, Interval, MainData, MENTUser
+from .models import (
+    FileAssociation, GlobalAlertRule, Algo, 
+    Group, Interval, MainData, MENTUser, 
+    TriggeredAlert
+)
 from ttscanner.utils.algo_detector import assign_detected_algo, UnknownAlgoError
 from .serializers import (
     CSVUploadSerializer, 
@@ -13,11 +17,9 @@ from .serializers import (
     FileAssociationListSerializer, AlgoSerializer,
     GroupSerializer, IntervalSerializer,
     GlobalAlertListSerializer, GlobalAlertUpdateSerializer,
-    UserRoleSerializer
+    UserRoleSerializer, TriggeredAlertSerializer
 )
 from .permissions import IsTTAdmin
-from rest_framework.decorators import api_view
-from .tasks import send_sms_notifications
 from rest_framework.permissions import IsAuthenticated
 from .utils.csv_utils import (
     read_uploaded_file_bytes,
@@ -185,82 +187,35 @@ class FileAssociationUpdateView(generics.UpdateAPIView):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+
+        ftp_path_before = instance.file_path
+        ftp_path_after = request.data.get("file_path", ftp_path_before)
+
+        if ftp_path_after != ftp_path_before:
+            instance.data_version = 0
+            try:
+                content_bytes = fetch_ftp_bytes(ftp_path_after)
+            except Exception as e:
+                return Response(
+                    {"detail": f"Could not fetch file from new FTP path: {str(e)}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            try:
+                changed, new_hash = is_file_changed(instance, content_bytes)
+                if changed:
+                    rows_count = store_csv_data(instance, content_bytes, new_hash, url=ftp_path_after)
+                    instance.last_fetched_at = timezone.now()
+                    print(f"[UPDATE] CSV updated for {instance.file_name} with {rows_count} rows.")
+            except Exception as e:
+                return Response(
+                    {"detail": f"CSV parse error: {str(e)}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         serializer.save()
         list_serializer = FileAssociationListSerializer(instance)
         return Response(list_serializer.data, status=status.HTTP_200_OK)
-
-# class FileAssociationUpdateView(generics.UpdateAPIView):
-#     queryset = FileAssociation.objects.all()
-#     serializer_class = FileAssociationUpdateSerializer
-
-#     def patch(self, request, *args, **kwargs):
-#         instance = self.get_object()
-
-
-#         old_ftp_path = instance.file_path
-#         old_file_name = instance.file_name
-
-#         # Perform update
-#         serializer = self.get_serializer(instance, data=request.data, partial=True)
-#         serializer.is_valid(raise_exception=True)
-#         updated_instance = serializer.save()
-
-#         response_data = {
-#             "updated": True,
-#             "file_reparsed": False,   # default unless change detected
-#         }
-
-#         # Detect if a file source changed
-#         source_changed = (
-#             updated_instance.file_path != old_ftp_path
-#             or updated_instance.file_name != old_file_name
-#         )
-
-#         if source_changed:
-#             try:
-#                 # Fetch file bytes (FTP or uploaded file)
-#                 if updated_instance.file_path:
-#                     content_bytes = fetch_ftp_bytes(updated_instance.file_path)
-#                 elif updated_instance.file_name: 
-#                     # If needed, fetch from stored file (optional depending on design)
-#                     content_bytes = read_uploaded_file_bytes(updated_instance.file_name)
-#                 else:
-#                     return Response({"detail": "No valid file source found after update."}, status=400)
-
-#                 # Detect algorithm
-#                 detected_algo = assign_detected_algo(updated_instance, content_bytes)
-
-#                 # Check file change using hashing
-#                 changed, new_hash = is_file_changed(updated_instance, content_bytes)
-
-#                 if changed:
-#                     # Parse + update stored dataset
-#                     rows_count = store_csv_data(updated_instance, content_bytes, new_hash, url=updated_instance.file_path)
-
-#                     response_data.update({
-#                         "file_reparsed": True,
-#                         "rows": rows_count,
-#                         "algo_detected": detected_algo,
-#                         "detail": "Source changed → CSV reprocessed"
-#                     })
-#                 else:
-#                     updated_instance.last_fetched_at = timezone.now()
-#                     updated_instance.save(update_fields=['last_fetched_at'])
-
-#                     response_data.update({
-#                         "file_reparsed": False,
-#                         "algo_detected": detected_algo,
-#                         "detail": "Source changed but file contents unchanged"
-#                     })
-
-#             except Exception as e:
-#                 return Response({"detail": f"File reprocessing failed: {str(e)}"}, status=400)
-
-#         list_serializer = FileAssociationListSerializer(updated_instance)
-#         response_data["record"] = list_serializer.data
-
-#         return Response(response_data, status=status.HTTP_200_OK)
-
 
 
 
@@ -373,66 +328,10 @@ class GlobalAlertDeleteView(generics.DestroyAPIView):
 
 
 class GlobalAlertListView(generics.ListAPIView):
+   # permission_classes = [IsAuthenticated, IsTTAdmin]
     serializer_class = GlobalAlertListSerializer
     queryset = GlobalAlertRule.objects.all()
 
-
-class SymIntListView(generics.ListAPIView):
-    queryset = MainData.objects.all()
-
-    def find_sym_int_column(self, headers):
-        for h in headers:
-            normalized = (
-                str(h).lower()
-                .replace(" ", "")
-                .replace("_", "")
-                .replace("-", "")
-                .replace("/", "")
-            )
-            if "sym" in normalized and "int" in normalized:
-                return h
-        return None
-    
-    def get(self, request, pk):
-        try:
-            fa = FileAssociation.objects.get(id = pk)
-        except FileAssociation.DoesNotExist:
-            return Response({"detail": "File Association Does Not Exist"},status=status.HTTP_404_NOT_FOUND)
-        main_data = MainData.objects.filter(file_association=fa).first()
-
-        if not main_data:
-            return Response({"detail": "MainData not found for this FileAssociation"}, status=404)
-        
-        sym_int_key = self.find_sym_int_column(fa.headers)
-        print(sym_int_key)
-        if not sym_int_key:
-            return Response({"details ":'Could not detect Symbol/Interval column'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        all_rows = main_data.data_json.get("rows", [])
-        valid_sym_int_values = {
-            str(row.get(sym_int_key, ""))
-            for row in all_rows if sym_int_key in row
-        }
-        print(valid_sym_int_values)
-
-        return Response(valid_sym_int_values, status=200)
-
-
-
-@api_view(["POST"])
-def send_announcement(request):
-    message = request.data.get("message", "").strip()
-
-    if not message:
-        return Response({"error": "Message cannot be empty"}, status=400)
-
-    task = send_sms_notifications.delay(message)
-
-    return Response({
-        "status": "queued",
-        "task_id": task.id,
-        "message": "Success! Your message is now being sent to all recipients."
-    }, status=status.HTTP_200_OK)
 
 
 class UserRoleView(generics.ListAPIView):
@@ -446,3 +345,17 @@ class UserRoleView(generics.ListAPIView):
 
         serializer = self.get_serializer(user)
         return Response(serializer.data)
+
+
+class TriggeredAlertsAdminView(generics.ListAPIView):
+    # permission_classes = [permissions.IsAuthenticated, IsTTAdmin]
+    serializer_class = TriggeredAlertSerializer
+
+    def get_queryset(self):
+        return TriggeredAlert.objects.filter(alert_source__in=['global', 'system']).order_by('-triggered_at')
+
+    def get(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.serializer_class(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+

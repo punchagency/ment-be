@@ -255,6 +255,7 @@ class TriggeredAlert(models.Model):
     ]
 
     file_association = models.ForeignKey(FileAssociation, on_delete=models.CASCADE)
+    symbol = models.CharField(max_length=100, blank=True, null=True) 
 
     alert_source = models.CharField(
         max_length=10,

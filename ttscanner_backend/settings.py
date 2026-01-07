@@ -30,8 +30,11 @@ SECRET_KEY = os.getenv(
 
 DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
 
-# Allow localhost and 127.0.0.1 for dev
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+# To this (includes your PipeOps domains):
+ALLOWED_HOSTS = os.getenv(
+    "ALLOWED_HOSTS", 
+    "localhost,127.0.0.1,marine-ship.igris.cloud,ment-direction.pipeops.app"
+).split(",")
 
 # Application definition
 INSTALLED_APPS = [
@@ -92,22 +95,24 @@ else:
     port = db_port
 
 
-# Database
+# Database - USE THE PARSED VALUES!
 DATABASES = {
     "default": {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': os.getenv('DB_NAME'),
         'USER': os.getenv('DB_USER'),
         'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': db_host,
-        'PORT': db_port,
+        'HOST': host,  # ← CORRECT: Use parsed 'host'
+        'PORT': port,  # ← CORRECT: Use parsed 'port'
         'OPTIONS': {
             'charset': 'utf8mb4',
-            # PipeOps MySQL usually doesn't require SSL
-            # Remove any 'ssl_mode' or 'ssl' options entirely for now
         }
     }
 }
+
+# Add debug logging to see what values are being used
+print(f"DEBUG: Database connection - HOST: {host}, PORT: {port}, NAME: {os.getenv('DB_NAME')}")
+
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

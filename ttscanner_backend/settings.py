@@ -79,14 +79,33 @@ TEMPLATES = [
 WSGI_APPLICATION = 'ttscanner_backend.wsgi.application'
 
 # Database
+db_host = os.getenv('DB_HOST', '')
+db_port = os.getenv('DB_PORT', '')
+
+# If DB_HOST contains port (e.g., "marine-ship.igris.cloud:17143")
+if ':' in db_host:
+    host, port_from_host = db_host.split(':')
+    # Use port from DB_HOST if it exists
+    port = port_from_host
+else:
+    host = db_host
+    port = db_port
+
+
+# Database
 DATABASES = {
     "default": {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': os.getenv('DB_NAME'),
         'USER': os.getenv('DB_USER'),
         'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT'),
+        'HOST': db_host,
+        'PORT': db_port,
+        'OPTIONS': {
+            'charset': 'utf8mb4',
+            # PipeOps MySQL usually doesn't require SSL
+            # Remove any 'ssl_mode' or 'ssl' options entirely for now
+        }
     }
 }
 

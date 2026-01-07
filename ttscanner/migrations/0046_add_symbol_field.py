@@ -3,7 +3,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ('ttscanner', '0045_announcement'),
+      ('ttscanner', '0043_fileassociation_data_version'),  
     ]
 
     operations = [

@@ -22,19 +22,30 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
+# To this (includes your PipeOps domains):
+ALLOWED_HOSTS = os.getenv(
+    "ALLOWED_HOSTS", 
+    "localhost,127.0.0.1,marine-ship.igris.cloud,ment-direction.pipeops.app"
+).split(",")
+
 # SECURITY
 SECRET_KEY = os.getenv(
     "DJANGO_SECRET_KEY",
     "django-insecure-(nf+o%mj0u60j=7jb9t@f%p3vbe6mq+n_$h7e#p&)fol+3kzc^"
 )
 
-DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")  
 
-# To this (includes your PipeOps domains):
-ALLOWED_HOSTS = os.getenv(
-    "ALLOWED_HOSTS", 
-    "localhost,127.0.0.1,marine-ship.igris.cloud,ment-direction.pipeops.app"
-).split(",")
+# ADD THESE LINES RIGHT HERE:
+CSRF_TRUSTED_ORIGINS = [
+    'https://ment-direction.pipeops.app',
+    'https://*.pipeops.app',
+]
+
+# Also add if you're using HTTPS:
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
 
 # Application definition
 INSTALLED_APPS = [
@@ -92,7 +103,7 @@ if ':' in db_host:
     port = port_from_host
 else:
     host = db_host
-    port = db_port
+    port = db_port if db_port else '3306'
 
 
 # Database - USE THE PARSED VALUES!
@@ -102,8 +113,8 @@ DATABASES = {
         'NAME': os.getenv('DB_NAME'),
         'USER': os.getenv('DB_USER'),
         'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': host,  # ← CORRECT: Use parsed 'host'
-        'PORT': port,  # ← CORRECT: Use parsed 'port'
+        'HOST': host,  
+        'PORT': port,  
         'OPTIONS': {
             'charset': 'utf8mb4',
         }

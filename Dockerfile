@@ -19,4 +19,4 @@ COPY . .
 EXPOSE 5807
 
 # Run migrations and start Gunicorn production server
-CMD sh -c "python manage.py migrate && gunicorn ttscanner_backend.wsgi:application --bind 0.0.0.0:5807"
+CMD sh -c "python manage.py migrate && python manage.py shell -c \"from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.create_superuser('superadmin', 'admin@admin.com', 'Super$User$#2025!')\" || true && gunicorn ttscanner_backend.wsgi:application --bind 0.0.0.0:5807"

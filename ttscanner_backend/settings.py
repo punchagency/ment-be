@@ -78,21 +78,23 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'ttscanner_backend.wsgi.application'
 
-# Database
+
 # Database
 DATABASES = {
-    "default": {
+    'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('DB_NAME', 'pipeops'),
-        'USER': os.getenv('DB_USER', 'qhmnS7Z7ocdk'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'PuJACq6JuMPSIVxsT5LT8XGxZ'),
-        'HOST': os.getenv('DB_HOST', '0.0.0.0'),  
-        'PORT': os.getenv('DB_PORT', '3306'),    
+        'NAME': os.environ.get('DB_NAME', 'pipeops'),
+        'USER': os.environ.get('DB_USER', 'qhmns727ocdk'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'PuJACqGJuMPSIVxsTSLT8XGxZ'),
+        'HOST': 'marine-ship.igris.cloud',  # From your env vars
+        'PORT': '17143',  # Try this first, if fails try 3380
         'OPTIONS': {
             'charset': 'utf8mb4',
+            'ssl_mode': 'REQUIRED',
         }
     }
 }
+
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

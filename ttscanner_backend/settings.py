@@ -79,14 +79,18 @@ TEMPLATES = [
 WSGI_APPLICATION = 'ttscanner_backend.wsgi.application'
 
 # Database
+# Database
 DATABASES = {
     "default": {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('DB_NAME', 'ment_ttscanner'),
-        'USER': os.getenv('DB_USER', 'root'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'MentT1T1S2025'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '3306'),
+        'NAME': os.getenv('DB_NAME', 'pipeops'),
+        'USER': os.getenv('DB_USER', 'qhmnS7Z7ocdk'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'PuJACq6JuMPSIVxsT5LT8XGxZ'),
+        'HOST': os.getenv('DB_HOST', '0.0.0.0'),  
+        'PORT': os.getenv('DB_PORT', '3306'),    
+        'OPTIONS': {
+            'charset': 'utf8mb4',
+        }
     }
 }
 

@@ -287,7 +287,7 @@ class TriggeredAlert(models.Model):
     message = models.TextField()
 
     class Meta:
-        db_table = 'triggered_alerts'
+        db_table = 'ttscanner_triggeredalert'
         ordering = ["-triggered_at"]
 
 
@@ -372,4 +372,4 @@ class Announcement(models.Model):
         return f"{self.type} Announcement at {self.created_at.strftime('%Y-%m-%d %H:%M')}"
     
     class Meta:
-        db_table = 'announcements'
+        db_table = 'ttscanner_announcement'

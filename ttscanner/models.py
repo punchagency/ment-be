@@ -20,6 +20,9 @@ class MENTUser(models.Model):
 
     def check_password(self, raw_password):
         return check_password(raw_password, self.password)
+    
+    class Meta:
+        db_table = 'ttscanner_mentuser'
 
 
 class Algo(models.Model):
@@ -167,6 +170,9 @@ class MainData(models.Model):
         normalized_row = {str(k).strip(): v for k, v in row.items() if k != "_row_hash"}
         json_str = json.dumps(normalized_row, sort_keys=True)
         return hashlib.sha256(json_str.encode()).hexdigest()
+    
+    class Meta:
+        db_table = 'main_data'
 
 
 
@@ -179,6 +185,7 @@ class FavoriteRow(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = 'ttscanner_favoriterow'
         unique_together = ('user', 'row_id', 'file_association')
 
 
@@ -280,6 +287,7 @@ class TriggeredAlert(models.Model):
     message = models.TextField()
 
     class Meta:
+        db_table = 'triggered_alerts'
         ordering = ["-triggered_at"]
 
 
@@ -347,6 +355,9 @@ class UserSettings(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        db_table = 'ttscanner_usersettings'
+
 
 class Announcement(models.Model):
     message = models.TextField()
@@ -359,3 +370,6 @@ class Announcement(models.Model):
 
     def __str__(self):
         return f"{self.type} Announcement at {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+    
+    class Meta:
+        db_table = 'announcements'

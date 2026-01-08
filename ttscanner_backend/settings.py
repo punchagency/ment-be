@@ -34,7 +34,7 @@ SECRET_KEY = os.getenv(
     "django-insecure-(nf+o%mj0u60j=7jb9t@f%p3vbe6mq+n_$h7e#p&)fol+3kzc^"
 )
 
-DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")  
+DEBUG = True 
 
 # ADD THESE LINES RIGHT HERE:
 CSRF_TRUSTED_ORIGINS = [
@@ -49,6 +49,7 @@ CSRF_COOKIE_SECURE = True
 
 # Application definition
 INSTALLED_APPS = [
+    'whitenoise.runserver_nostatic',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -142,6 +143,11 @@ USE_TZ = True
 # Static files
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+]
+
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

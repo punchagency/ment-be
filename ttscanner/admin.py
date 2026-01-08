@@ -18,7 +18,7 @@ from .models import (
 @admin.register(MENTUser)
 class UserProfileAdmin(admin.ModelAdmin):
     list_display = ('external_user_id', 'role', 'email', 'phone')
-    search_fields = ('external_user_id__username',)
+    search_fields = ('external_user_id', 'email', 'phone')  
 
 
 @admin.register(Algo)
@@ -50,7 +50,7 @@ class MainDataAdmin(admin.ModelAdmin):
 @admin.register(FavoriteRow)
 class FavoriteRowAdmin(admin.ModelAdmin):
     list_display = ('user', 'file_association', 'row_hash')
-    search_fields = ('user', 'file_association')
+    search_fields = ('user__external_user_id', 'file_association__file_name')
 
 @admin.register(GlobalAlertRule)
 class GlobalAlertRuleAdmin(admin.ModelAdmin):
@@ -61,7 +61,7 @@ class GlobalAlertRuleAdmin(admin.ModelAdmin):
 @admin.register(CustomAlert)
 class CustomAlertAdmin(admin.ModelAdmin):
     list_display = ('user', 'file_association', 'field_name', 'condition_type', 'is_active', 'created_at')
-    search_fields = ('user__username', 'field_name', 'file_association__file_name')
+    search_fields = ('user__external_user_id', 'field_name', 'file_association__file_name')  # CHANGED
     list_filter = ('is_active', 'condition_type')
 
 @admin.register(TriggeredAlert)

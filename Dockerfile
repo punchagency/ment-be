@@ -19,4 +19,12 @@ COPY . .
 EXPOSE 5807
 
 # Run migrations and start Gunicorn production server
-CMD sh -c "python manage.py migrate --fake && gunicorn ttscanner_backend.wsgi:application --bind 0.0.0.0:5807"
+CMD sh -c "python manage.py migrate --fake && \
+    gunicorn ttscanner_backend.wsgi:application \
+    --bind 0.0.0.0:5807 \
+    --workers=2 \        
+    --threads=2 \          
+    --timeout=120 \ 
+    --max-requests=1000 \  
+    --max-requests-jitter=50 \
+    --worker-class=gthread"  

@@ -58,13 +58,22 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework.authtoken',
+    'silk',
     'ttscanner',
     'corsheaders',
 ]
 
+# # Tell Django to use your custom user model
+# AUTH_USER_MODEL = 'ttscanner.MENTUser'
+
+# Also add authentication backend
+# AUTHENTICATION_BACKENDS = [
+#     'django.contrib.auth.backends.ModelBackend',
+# ]
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'silk.middleware.SilkyMiddleware', 
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -73,6 +82,14 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# Silk configuration (SAFE for production)
+SILKY_AUTHENTICATION = True  # Requires login
+SILKY_AUTHORISATION = True   # Only for authorized users
+SILKY_PERMISSIONS = lambda user: user.is_superuser  # Only superusers
+SILKY_INTERCEPT_PERCENT = 100  # Profile 100% of requests
+SILKY_MAX_RECORDED_REQUESTS = 10**4  # Store up to 10k requests
+SILKY_MAX_RECORDED_REQUESTS_CHECK_PERCENT = 10
 
 ROOT_URLCONF = 'ttscanner_backend.urls'
 
@@ -118,7 +135,9 @@ DATABASES = {
         'PORT': port,  
         'OPTIONS': {
             'charset': 'utf8mb4',
-        }
+            'connect_timeout': 10,  
+        },
+        'CONN_MAX_AGE': 300, 
     }
 }
 

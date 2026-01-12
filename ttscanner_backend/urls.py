@@ -21,6 +21,5 @@ from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('ttscanner/', include('ttscanner.urls')),
-    path('silk/', include('silk.urls', namespace='silk')),
+    path('ttscanner/', include('ttscanner.urls'))
 ]

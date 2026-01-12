@@ -34,7 +34,7 @@ SECRET_KEY = os.getenv(
     "django-insecure-(nf+o%mj0u60j=7jb9t@f%p3vbe6mq+n_$h7e#p&)fol+3kzc^"
 )
 
-DEBUG = True 
+DEBUG = False 
 
 # ADD THESE LINES RIGHT HERE:
 CSRF_TRUSTED_ORIGINS = [
@@ -58,7 +58,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework.authtoken',
-    'silk',
     'ttscanner',
     'corsheaders',
 ]
@@ -73,7 +72,6 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'silk.middleware.SilkyMiddleware', 
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -128,11 +126,11 @@ else:
 DATABASES = {
     "default": {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': host,  
-        'PORT': port,  
+        'NAME': os.environ['MYSQL_DATABASE'],  
+        'USER': os.environ['MYSQL_USER'],      
+        'PASSWORD': os.environ['MYSQL_PASSWORD'],  
+        'HOST': os.environ['MYSQL_HOST'],     
+        'PORT': '3306',  
         'OPTIONS': {
             'charset': 'utf8mb4',
             'connect_timeout': 10,  

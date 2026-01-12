@@ -62,13 +62,7 @@ INSTALLED_APPS = [
     'corsheaders',
 ]
 
-# # Tell Django to use your custom user model
-# AUTH_USER_MODEL = 'ttscanner.MENTUser'
 
-# Also add authentication backend
-# AUTHENTICATION_BACKENDS = [
-#     'django.contrib.auth.backends.ModelBackend',
-# ]
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware', 
@@ -98,10 +92,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'ttscanner_backend.wsgi.application'
 
-
-# Database - SIMPLIFIED AND CORRECTED
 DATABASES = {
     "default": {
         'ENGINE': 'django.db.backends.mysql',
@@ -112,11 +103,12 @@ DATABASES = {
         'PORT': os.environ.get('MYSQL_PORT', '3306'),
         'OPTIONS': {
             'charset': 'utf8mb4',
-            'connect_timeout': 30,
-            'read_timeout': 30,
-            'write_timeout': 30,
+            'connect_timeout': 5,   
+            'read_timeout': 5,        
+            'write_timeout': 5,     
+            'init_command': "SET SESSION wait_timeout=30", 
         },
-        'CONN_MAX_AGE': 300,
+        'CONN_MAX_AGE': 30,  
     }
 }
 
@@ -124,6 +116,17 @@ DATABASES = {
 print(f"DEBUG: MYSQL_HOST = {os.environ.get('MYSQL_HOST')}")
 print(f"DEBUG: MYSQL_DATABASE = {os.environ.get('MYSQL_DATABASE')}")
 print(f"DEBUG: MYSQL_USER = {os.environ.get('MYSQL_USER')}")
+
+
+from django.db import connection
+from django.core.signals import request_finished
+from django.dispatch import receiver
+
+@receiver(request_finished)
+def close_connection(**kwargs):
+    connection.close_if_unusable_or_obsolete()
+
+WSGI_APPLICATION = 'ttscanner_backend.wsgi.application'
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

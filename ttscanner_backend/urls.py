@@ -16,10 +16,19 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-#from django.conf import settings
-# from django.conf.urls.static import static
+from django.http import JsonResponse
+import time
+
+def health_check(request):
+    start = time.time()
+    return JsonResponse({
+        'status': 'healthy',
+        'timestamp': time.time(),
+        'response_time': time.time() - start
+    })
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('ttscanner/', include('ttscanner.urls'))
+    path('ttscanner/', include('ttscanner.urls')),
+    path('health/', health_check, name='health'),
 ]

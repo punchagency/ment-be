@@ -18,13 +18,12 @@ COPY . .
 # Expose port 5807 
 EXPOSE 5807
 
-# Run migrations and start Gunicorn production server
-CMD sh -c "python manage.py migrate --fake && \
+CMD sh -c "python manage.py migrate && \
     gunicorn ttscanner_backend.wsgi:application \
-    --bind 0.0.0.0:5807 \
-    --workers=2 \        
-    --threads=2 \          
-    --timeout=120 \ 
-    --max-requests=1000 \  
-    --max-requests-jitter=50 \
-    --worker-class=gthread"  
+    --workers=2 \
+    --worker-class=sync \
+    --bind=0.0.0.0:$PORT \
+    --timeout=30 \
+    --keep-alive=5 \
+    --max-requests=100 \
+    --max-requests-jitter=10"

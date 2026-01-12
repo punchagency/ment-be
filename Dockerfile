@@ -20,7 +20,7 @@ EXPOSE 5807
 
 CMD sh -c "python manage.py migrate && \
     gunicorn ttscanner_backend.wsgi:application \
-    --workers=2 \
+    --workers=1 \
     --worker-class=sync \
     --bind=0.0.0.0:$PORT \
     --timeout=30 \

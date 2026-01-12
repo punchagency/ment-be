@@ -71,7 +71,7 @@ INSTALLED_APPS = [
 # ]
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
-    'django.middleware.security.SecurityMiddleware',
+    'django.middleware.security.SecurityMiddleware', 
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -80,14 +80,6 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-
-# Silk configuration (SAFE for production)
-SILKY_AUTHENTICATION = True  # Requires login
-SILKY_AUTHORISATION = True   # Only for authorized users
-SILKY_PERMISSIONS = lambda user: user.is_superuser  # Only superusers
-SILKY_INTERCEPT_PERCENT = 100  # Profile 100% of requests
-SILKY_MAX_RECORDED_REQUESTS = 10**4  # Store up to 10k requests
-SILKY_MAX_RECORDED_REQUESTS_CHECK_PERCENT = 10
 
 ROOT_URLCONF = 'ttscanner_backend.urls'
 
@@ -108,40 +100,30 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'ttscanner_backend.wsgi.application'
 
-# Database
-db_host = os.getenv('DB_HOST', '')
-db_port = os.getenv('DB_PORT', '')
 
-# If DB_HOST contains port (e.g., "marine-ship.igris.cloud:17143")
-if ':' in db_host:
-    host, port_from_host = db_host.split(':')
-    # Use port from DB_HOST if it exists
-    port = port_from_host
-else:
-    host = db_host
-    port = db_port if db_port else '3306'
-
-
-# Database - USE THE PARSED VALUES!
+# Database - SIMPLIFIED AND CORRECTED
 DATABASES = {
     "default": {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.environ['MYSQL_DATABASE'],  
-        'USER': os.environ['MYSQL_USER'],      
-        'PASSWORD': os.environ['MYSQL_PASSWORD'],  
-        'HOST': os.environ['MYSQL_HOST'],     
-        'PORT': '3306',  
+        'NAME': os.environ.get('MYSQL_DATABASE', 'pipeops'),
+        'USER': os.environ.get('MYSQL_USER', ''),
+        'PASSWORD': os.environ.get('MYSQL_PASSWORD', ''),
+        'HOST': os.environ.get('MYSQL_HOST', 'localhost'),
+        'PORT': os.environ.get('MYSQL_PORT', '3306'),
         'OPTIONS': {
             'charset': 'utf8mb4',
-            'connect_timeout': 10,  
+            'connect_timeout': 30,
+            'read_timeout': 30,
+            'write_timeout': 30,
         },
-        'CONN_MAX_AGE': 300, 
+        'CONN_MAX_AGE': 300,
     }
 }
 
-# Add debug logging to see what values are being used
-print(f"DEBUG: Database connection - HOST: {host}, PORT: {port}, NAME: {os.getenv('DB_NAME')}")
-
+# Debug with CORRECT variables
+print(f"DEBUG: MYSQL_HOST = {os.environ.get('MYSQL_HOST')}")
+print(f"DEBUG: MYSQL_DATABASE = {os.environ.get('MYSQL_DATABASE')}")
+print(f"DEBUG: MYSQL_USER = {os.environ.get('MYSQL_USER')}")
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

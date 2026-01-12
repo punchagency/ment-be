@@ -23,7 +23,7 @@ CMD sh -c "python manage.py migrate && \
     --workers=1 \
     --worker-class=sync \
     --bind=0.0.0.0:$PORT \
-    --timeout=30 \
+    --timeout=120 \  
     --keep-alive=5 \
-    --max-requests=100 \
+    --max-requests=50 \
     --max-requests-jitter=10"

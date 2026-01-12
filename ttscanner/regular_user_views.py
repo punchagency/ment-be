@@ -665,7 +665,7 @@ def sse_user_alerts(request, external_user_id):
 
                 yield f"data: {json.dumps(payload)}\n\n"
 
-            time.sleep(1)
+            time.sleep(0.1)
 
     response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
     response["Cache-Control"] = "no-cache"
@@ -735,7 +735,7 @@ def sse_file_updates(request, pk):
                 if not main_data:
                     payload = {"error": "No data found for this FileAssociation."}
                     yield f"data: {json.dumps(payload)}\n\n"
-                    time.sleep(1)
+                    time.sleep(0.1)
                     continue
 
                 headers = main_data.data_json.get("headers", [])

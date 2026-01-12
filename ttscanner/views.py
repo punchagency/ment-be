@@ -334,19 +334,6 @@ class GlobalAlertListView(generics.ListAPIView):
 
 
 
-class UserRoleView(generics.ListAPIView):
-    serializer_class = UserRoleSerializer
-
-    def get(self, request):
-        user = MENTUser.objects.first()
-
-        if not user:
-            return Response({"error": "No test user found"}, status=404)
-
-        serializer = self.get_serializer(user)
-        return Response(serializer.data)
-
-
 class TriggeredAlertsAdminView(generics.ListAPIView):
     # permission_classes = [permissions.IsAuthenticated, IsTTAdmin]
     serializer_class = TriggeredAlertSerializer

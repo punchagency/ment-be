@@ -755,7 +755,7 @@ def sse_file_updates(request, pk):
 
                 yield f"data: {json.dumps(payload)}\n\n"
 
-            time.sleep(1)
+            time.sleep(0.1)
 
     response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
     response['Cache-Control'] = 'no-cache'

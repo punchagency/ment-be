@@ -13,9 +13,8 @@ from .views import (
     AlgoDeleteView, TriggeredAlertsAdminView
 )
 from .regular_user_views import(
-    CSVListView, FilterCSVView,
-    CSVHeaderView, SymIntListView,
-    SortCSVView, FavoriteRowView, 
+    CSVListView, CSVHeaderView, 
+    SymIntListView, FavoriteRowView, 
     CustomAlertCreateView, CustomAlertUpdateView, 
     CustomAlertDeleteView, UserSettingsCreateView, 
     UpdateUserSettingsView,UserSettingsView, 
@@ -24,8 +23,7 @@ from .regular_user_views import(
     DeleteFavoriteView, CustomAlertView, 
     UserTriggeredAlertsView
 )
-from .fbv_views import announcement_log, send_announcement, login, logout_view
-from ttscanner import regular_user_views
+from .fbv_views import announcement_log, send_announcement, login, logout_view, sse_file_updates, sse_user_alerts
 
 urlpatterns = [
     path('algos/', AlgoListView.as_view(), name='algo-list'),
@@ -55,16 +53,14 @@ urlpatterns = [
     path('global-alert/all/', GlobalAlertListView.as_view(), name='ga-all'),
     path('alert-logs/admin/', TriggeredAlertsAdminView.as_view(), name='alert-logs-admin'),
     path('csv-data/<int:pk>/', CSVListView.as_view(), name='csv-data'),
-    path('filter-csv/<int:pk>/', FilterCSVView.as_view(), name='filter-csv'),
     path('csv-headers/<int:pk>/', CSVHeaderView.as_view(), name='csv-headers'),
     path('sym-int/<int:pk>/', SymIntListView.as_view(), name='sym-int'),
-    path('sort-csv/<int:pk>/', SortCSVView.as_view(), name='sort-csv'),
 
     path('fav-row/create/<int:pk>/', FavoriteRowView.as_view(), name='fav-row'),
     path('fav-row/delete/<int:pk>/', DeleteFavoriteView.as_view(), name='fav-row-delete'),
     path('fav-row-list/<int:external_user_id>/', FavoriteRowListView.as_view(), name='fav-row-all'),   
-    path('sse/<int:pk>/', regular_user_views.sse_file_updates, name='sse_file_updates'),  
-    path('user-alert/sse/<int:external_user_id>/', regular_user_views.sse_user_alerts, name='sse_user_alerts'),   
+    path('sse/<int:pk>/', sse_file_updates, name='sse_file_updates'),  
+    path('user-alert/sse/<int:external_user_id>/', sse_user_alerts, name='sse_user_alerts'),   
     
 
     path('announcement/send/', send_announcement, name='send_announcement'),

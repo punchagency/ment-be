@@ -106,7 +106,7 @@ DATABASES = {
             'connect_timeout': 5,   
             'read_timeout': 5,        
             'write_timeout': 5,     
-            'init_command': "SET SESSION wait_timeout=30", 
+            'init_command': "SET SESSION wait_timeout=28800", 
         },
         'CONN_MAX_AGE': 0,  
     }

@@ -6,8 +6,7 @@ from django.utils import timezone
 from rest_framework import generics
 from .models import (
     FileAssociation, GlobalAlertRule, Algo, 
-    Group, Interval, MainData, MENTUser, 
-    TriggeredAlert
+    Group, Interval, TriggeredAlert
 )
 from ttscanner.utils.algo_detector import assign_detected_algo, UnknownAlgoError
 from .serializers import (
@@ -30,7 +29,10 @@ from .utils.csv_utils import (
 #ALGO VIEWS
 class AlgoListView(ListAPIView):
     serializer_class = AlgoSerializer
-    queryset = Algo.objects.all()
+    
+    def get_queryset(self):
+        return Algo.objects.only('id', 'algo_name', 'supports_targets', 'supports_direction')
+    
 
 class AlgoCreateView(generics.CreateAPIView):
     queryset = Algo.objects.all()
@@ -74,7 +76,8 @@ class AlgoDeleteView(generics.DestroyAPIView):
 #GROUP VIEWS
 class GroupListView(ListAPIView):
     serializer_class = GroupSerializer
-    queryset = Group.objects.all()
+    def get_queryset(self):
+        return Group.objects.only('id', 'group_name')
 
 class GroupCreateView(generics.CreateAPIView):
     queryset = Group.objects.all()
@@ -119,7 +122,8 @@ class GroupDeleteView(generics.DestroyAPIView):
 #INTERVAL VIEWS
 class IntervalListView(ListAPIView):
     serializer_class = IntervalSerializer
-    queryset = Interval.objects.all()
+    def get_queryset(self):
+        return Interval.objects.only('id', 'interval_name', 'interval_minutes')
 
 
 class IntervalCreateView(generics.CreateAPIView):
@@ -239,7 +243,15 @@ class FileAssociationDeleteView(generics.DestroyAPIView):
 
 class FileAssociationListView(ListAPIView):
     serializer_class = FileAssociationListSerializer
-    queryset = FileAssociation.objects.all()
+    
+    def get_queryset(self):
+        return FileAssociation.objects.select_related(
+            'algo', 'group', 'interval'
+        ).only(
+            'id', 'algo_name_copy', 'group_name_copy', 'interval_name_copy',
+            'status', 'file_name', 'data_version', 'last_fetched_at',
+            'algo__id', 'group__id', 'interval__id'
+        ).order_by('-created_at')
 
 
 class CSVUploadView(generics.GenericAPIView):
@@ -247,7 +259,9 @@ class CSVUploadView(generics.GenericAPIView):
     serializer_class = CSVUploadSerializer
 
     def post(self, request, pk):
-        fa = FileAssociation.objects.filter(id=pk).first()
+        fa = FileAssociation.objects.filter(id=pk).only(
+            'id', 'file_path', 'last_hash'
+        ).first()
         if not fa:
             return Response({"detail": "File Association not found."}, status=404)
 
@@ -328,21 +342,30 @@ class GlobalAlertDeleteView(generics.DestroyAPIView):
 
 
 class GlobalAlertListView(generics.ListAPIView):
-   # permission_classes = [IsAuthenticated, IsTTAdmin]
     serializer_class = GlobalAlertListSerializer
-    queryset = GlobalAlertRule.objects.all()
+    
+    def get_queryset(self):
+        return GlobalAlertRule.objects.select_related(
+            'file_association'
+        ).only(
+            'id', 'symbol_interval', 'field_name', 'condition_type',
+            'compare_value', 'last_value', 'is_active', 'created_at',
+            'file_association_id'
+        )
 
 
 
 class TriggeredAlertsAdminView(generics.ListAPIView):
-    # permission_classes = [permissions.IsAuthenticated, IsTTAdmin]
     serializer_class = TriggeredAlertSerializer
-
+    
     def get_queryset(self):
-        return TriggeredAlert.objects.filter(alert_source__in=['global', 'system']).order_by('-triggered_at')
-
-    def get(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-        serializer = self.serializer_class(queryset, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return TriggeredAlert.objects.filter(
+            alert_source__in=['global', 'system']
+        ).select_related(
+            'global_alert', 'file_association'
+        ).only(
+            'id', 'alert_source', 'symbol', 'triggered_at',
+            'acknowledged', 'message', 'global_alert_id',
+            'file_association_id'
+        ).order_by('-triggered_at')
 

@@ -5,15 +5,15 @@ from django.core.exceptions import ValidationError
 from django.contrib.auth.hashers import make_password, check_password
 
 class MENTUser(models.Model):
-    external_user_id = models.IntegerField(unique=True, db_index=True)  # ⚡ INDEX
-    username = models.CharField(max_length=50, unique=True, null=True, blank=True, db_index=True)  # ⚡ INDEX
+    external_user_id = models.IntegerField(unique=True, db_index=True)  
+    username = models.CharField(max_length=50, unique=True, null=True, blank=True, db_index=True)  
     password = models.CharField(max_length=128, null=True, blank=True)
     role = models.CharField(
         max_length=10,
         choices=[('admin', 'Admin'), ('regular', 'Regular')],
-        db_index=True  # ⚡ INDEX
+        db_index=True  
     )
-    email = models.EmailField(null=True, blank=True, db_index=True)  # ⚡ INDEX
+    email = models.EmailField(null=True, blank=True, db_index=True)  
     phone = models.CharField(max_length=30, null=True, blank=True)
 
     def set_password(self, raw_password):
@@ -27,12 +27,12 @@ class MENTUser(models.Model):
 
 
 class Algo(models.Model):
-    algo_name = models.CharField(max_length=255, unique=True, db_index=True)  # ⚡ INDEX
-    supports_targets = models.BooleanField(default=True, db_index=True)  # ⚡ INDEX
+    algo_name = models.CharField(max_length=255, unique=True, db_index=True)  
+    supports_targets = models.BooleanField(default=True, db_index=True)  
     supports_direction = models.BooleanField(default=True)
     supports_volume_alerts = models.BooleanField(default=False)
     price_field_key = models.CharField(max_length=100, default="last price")
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)  # ⚡ INDEX
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)  
 
     def __str__(self):
         return self.algo_name
@@ -40,13 +40,13 @@ class Algo(models.Model):
     class Meta:
         db_table = 'algos'
         indexes = [
-            models.Index(fields=['-created_at']),  # For latest first
+            models.Index(fields=['-created_at']),  
         ]
 
 
 class Group(models.Model):
-    group_name = models.CharField(max_length=255, unique=True, null=True, blank=True, db_index=True)  # ⚡ INDEX
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)  # ⚡ INDEX
+    group_name = models.CharField(max_length=255, unique=True, null=True, blank=True, db_index=True)  
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)  
     
     def __str__(self):
         return self.group_name
@@ -65,8 +65,8 @@ class Group(models.Model):
 
 
 class Interval(models.Model):
-    interval_name = models.CharField(max_length=20, unique=True, db_index=True)  # ⚡ INDEX
-    interval_minutes = models.PositiveIntegerField(editable=False, db_index=True)  # ⚡ INDEX
+    interval_name = models.CharField(max_length=20, unique=True, db_index=True)  
+    interval_minutes = models.PositiveIntegerField(editable=False, db_index=True)  
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
@@ -93,13 +93,13 @@ class Interval(models.Model):
 
 
 class FileAssociation(models.Model):
-    algo = models.ForeignKey(Algo, on_delete=models.SET_NULL, null=True, db_index=True)  # ⚡ INDEX
-    group = models.ForeignKey(Group, on_delete=models.SET_NULL, null=True, blank=True, db_index=True)  # ⚡ INDEX
-    interval = models.ForeignKey(Interval, on_delete=models.SET_NULL, null=True, db_index=True)  # ⚡ INDEX
+    algo = models.ForeignKey(Algo, on_delete=models.SET_NULL, null=True, db_index=True)  
+    group = models.ForeignKey(Group, on_delete=models.SET_NULL, null=True, blank=True, db_index=True)  
+    interval = models.ForeignKey(Interval, on_delete=models.SET_NULL, null=True, db_index=True)  
     
-    algo_name_copy = models.CharField(max_length=255, blank=True, db_index=True)  # ⚡ INDEX
-    group_name_copy = models.CharField(max_length=255, blank=True, null=True, db_index=True)  # ⚡ INDEX
-    interval_name_copy = models.CharField(max_length=255, blank=True, db_index=True)  # ⚡ INDEX
+    algo_name_copy = models.CharField(max_length=255, blank=True, db_index=True)  
+    group_name_copy = models.CharField(max_length=255, blank=True, null=True, db_index=True)  
+    interval_name_copy = models.CharField(max_length=255, blank=True, db_index=True)  
 
     status = models.CharField(
         max_length=50,
@@ -108,24 +108,24 @@ class FileAssociation(models.Model):
             ("unknown", "Unknown Algo")
         ],
         default="active",
-        db_index=True  # ⚡ INDEX
+        db_index=True  
     )
     headers = models.JSONField(null=True, blank=True)
-    file_name = models.CharField(max_length=255, unique=True, editable=False, db_index=True)  # ⚡ INDEX
+    file_name = models.CharField(max_length=255, unique=True, editable=False, db_index=True)  
     file_path = models.CharField(max_length=1024, blank=True, null=True)
     last_hash = models.CharField(max_length=128, blank=True, null=True)
-    last_fetched_at = models.DateTimeField(null=True, blank=True, db_index=True)  # ⚡ INDEX
+    last_fetched_at = models.DateTimeField(null=True, blank=True, db_index=True)  
     data_version = models.PositiveIntegerField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)  # ⚡ INDEX
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)  
 
     class Meta:
         db_table = 'file_associations'
         unique_together = ('algo', 'group', 'interval')
         indexes = [
-            models.Index(fields=['-created_at']),  # For latest first
-            models.Index(fields=['status', 'created_at']),  # Filter by status + date
-            models.Index(fields=['algo', 'interval']),  # Common filter combination
-            models.Index(fields=['file_name', 'status']),  # Search by file name
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['status', 'created_at']),  
+            models.Index(fields=['algo', 'interval']),  
+            models.Index(fields=['file_name', 'status']), 
         ]
 
     def save(self, *args, **kwargs):

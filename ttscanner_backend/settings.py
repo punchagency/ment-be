@@ -103,12 +103,12 @@ DATABASES = {
         'PORT': os.environ.get('MYSQL_PORT', '3306'),
         'OPTIONS': {
             'charset': 'utf8mb4',
-            'connect_timeout': 5,   
-            'read_timeout': 5,        
-            'write_timeout': 5,     
-            'init_command': "SET SESSION wait_timeout=28800", 
+            'connect_timeout': 5,
+            'read_timeout': 30,      
+            'write_timeout': 30,     
+            'init_command': "SET SESSION wait_timeout=28800",
         },
-        'CONN_MAX_AGE': 0,  
+        'CONN_MAX_AGE': 300, 
     }
 }
 

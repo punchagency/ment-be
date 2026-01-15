@@ -22,7 +22,7 @@ EXPOSE 5807
 CMD ["gunicorn", "ttscanner_backend.wsgi:application", \
     "--workers=1", \
     "--worker-class=sync", \
-    "--bind=0.0.0.0:$PORT", \
+    "--bind=0.0.0.0:5807", \
     "--timeout=120", \
     "--keep-alive=5", \
     "--max-requests=50", \

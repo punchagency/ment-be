@@ -16,7 +16,7 @@ from .serializers import (
     FileAssociationListSerializer, AlgoSerializer,
     GroupSerializer, IntervalSerializer,
     GlobalAlertListSerializer, GlobalAlertUpdateSerializer,
-    UserRoleSerializer, TriggeredAlertSerializer
+    TriggeredAlertSerializer
 )
 from .permissions import IsTTAdmin
 from rest_framework.permissions import IsAuthenticated
@@ -174,6 +174,8 @@ class FileAssociationCreateView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid(raise_exception=True):
                 fa = serializer.save()
+                print(f"ID: {fa.id}, algo_id: {fa.algo_id}")
+                print(f"File Association created with ID: {fa.id}, File Name: {fa.file_name}, Algo: {fa.algo.algo_name}")
                 return Response({
                     "id": fa.id,
                     "file_name": fa.file_name,
@@ -255,13 +257,15 @@ class FileAssociationListView(ListAPIView):
 
 
 class CSVUploadView(generics.GenericAPIView):
-   # permission_classes = [IsAuthenticated, IsTTAdmin]
     serializer_class = CSVUploadSerializer
 
     def post(self, request, pk):
-        fa = FileAssociation.objects.filter(id=pk).only(
-            'id', 'file_path', 'last_hash'
-        ).first()
+        fa = FileAssociation.objects.get(id=pk)
+        
+        # Store original algo BEFORE any processing
+        original_algo_id = fa.algo_id
+        print(f"Original algo_id: {original_algo_id}")
+        
         if not fa:
             return Response({"detail": "File Association not found."}, status=404)
 
@@ -279,25 +283,30 @@ class CSVUploadView(generics.GenericAPIView):
                 return Response({"detail": "No file source provided."}, status=400)
         except Exception as e:
             return Response({"detail": f"Could not fetch file: {str(e)}"}, status=400)
-
-        try:
-            detected_algo = assign_detected_algo(fa, content_bytes)
-        except UnknownAlgoError as e:
-            return Response({"detail": str(e)}, status=400)
-
+        
         changed, new_hash = is_file_changed(fa, content_bytes)
         if not changed:
+            fa.algo_id = original_algo_id
             fa.last_fetched_at = timezone.now()
-            fa.save(update_fields=['last_fetched_at'])
-            return Response({"changed": False, "algo": detected_algo, "detail": "No changes detected."}, status=200)
+            fa.save()  
+            return Response({
+                "changed": False, 
+                "detail": "No changes detected.",
+                "algo": fa.algo.algo_name if fa.algo else "Unknown"
+            }, status=200)
 
         try:
+            fa.algo_id = original_algo_id
             rows_count = store_csv_data(fa, content_bytes, new_hash, url=ftp_path)
         except Exception as e:
             return Response({"detail": f"CSV parse error: {str(e)}"}, status=400)
 
-        return Response({"changed": True, "rows": rows_count, "algo": detected_algo}, status=201)
-
+        return Response({
+            "changed": True, 
+            "rows": rows_count,
+            "algo": fa.algo.algo_name if fa.algo else "Unknown"
+        }, status=201)
+    
 
 class GlobalAlertCreateView(generics.CreateAPIView):
     serializer_class = GlobalAlertCreateSerializer

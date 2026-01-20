@@ -13,8 +13,7 @@ class AlgoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Algo
         fields = ['id', 'algo_name']
-
-
+        
 
 class GroupSerializer(serializers.ModelSerializer):
     class Meta:
@@ -492,7 +491,7 @@ class CustomAlertUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomAlert
-        fields = ['field_name', 'condition_type', 'compare_value', 'symbol_interval']
+        fields = ['field_name', 'condition_type', 'compare_value', 'symbol_interval', 'user']
     
     def validate(self, data):
         field_name = data.get("field_name")

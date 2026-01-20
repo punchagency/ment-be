@@ -313,9 +313,9 @@ class TriggeredAlert(models.Model):
         db_table = 'ttscanner_triggeredalert'
         ordering = ["-triggered_at"]
         indexes = [
-            models.Index(fields=['-triggered_at', 'acknowledged']),  # Latest unacknowledged
-            models.Index(fields=['file_association', '-triggered_at']),  # Alerts per file
-            models.Index(fields=['acknowledged', 'triggered_at']),  # Unacknowledged alerts
+            models.Index(fields=['-triggered_at', 'acknowledged']),  
+            models.Index(fields=['file_association', '-triggered_at']),  
+            models.Index(fields=['acknowledged', 'triggered_at']),  
         ]
 
 
@@ -341,9 +341,9 @@ class SymbolState(models.Model):
         unique_together = ("file_association", "symbol")
         db_table = "symbol_states"
         indexes = [
-            models.Index(fields=['file_association', '-updated_at']),  # Latest states per file
-            models.Index(fields=['symbol', 'file_association']),  # Find symbol across files
-            models.Index(fields=['last_price']),  # For price-based queries
+            models.Index(fields=['file_association', '-updated_at']),
+            models.Index(fields=['symbol', 'file_association']),  
+            models.Index(fields=['last_price']), 
         ]
 
     def __str__(self):

@@ -23,7 +23,7 @@ from .regular_user_views import(
     DeleteFavoriteView, CustomAlertView, 
     UserTriggeredAlertsView
 )
-from .fbv_views import announcement_log, send_announcement, login, logout_view, sse_file_updates, sse_user_alerts
+from .fbv_views import announcement_log, send_announcement, login, logout_view, sse_file_updates
 
 urlpatterns = [
     path('algos/', AlgoListView.as_view(), name='algo-list'),
@@ -60,7 +60,7 @@ urlpatterns = [
     path('fav-row/delete/<int:pk>/', DeleteFavoriteView.as_view(), name='fav-row-delete'),
     path('fav-row-list/<int:external_user_id>/', FavoriteRowListView.as_view(), name='fav-row-all'),   
     path('sse/<int:pk>/', sse_file_updates, name='sse_file_updates'),  
-    path('user-alert/sse/<int:external_user_id>/', sse_user_alerts, name='sse_user_alerts'),   
+    # path('user-alert/sse/<int:external_user_id>/', sse_user_alerts, name='sse_user_alerts'),   
     
 
     path('announcement/send/', send_announcement, name='send_announcement'),

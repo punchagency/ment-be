@@ -1,11 +1,40 @@
 {
     "TTScanner": {
         "trigger_type": "state_change",
-        "fields": ["Direction", "Profit %", "Target #1", "Target #2"],
+        "fields": ["Sym/Int", "Bars Since Entry", "Direction", "Entry Price", "Target #1", "Target #2", "Stop Price", "Profit %", "Thrust", "Profit Factor", "WinRate"],
         "alerts": [
-            {"field": "Direction", "message": "📌 New {direction} position opened for {symbol} at {entry_price}"},
-            {"field": "Target #1", "message": "🎯 Target #1 hit for {symbol} at {target1}"},
-            {"field": "Target #2", "message": "🎯 Target #2 hit for {symbol} at {target2}"}
+            {
+                "field": "Bars Since Entry",
+                "message": "🟢 New LONG position opened for {Sym/Int} at ${Entry Price}"
+            },
+            {
+                "field": "Bars Since Entry",
+                "message": "🔴 New SHORT position opened for {Sym/Int} at ${Entry Price}"
+            },
+            {    
+                "field": "Direction",
+                "message": "🚫 [FLAT] {Sym/Int} | LONG position closed | Return: {Profit Factor}"
+            },
+            {    
+                "field": "Direction",
+                "message": "🚫 [FLAT] {Sym/Int} | SHORT position closed | Return: {Profit Factor}"
+            },
+            {
+                "field": "Direction",
+                "message": "🔄 LONG→SHORT reversal for {Sym/Int}"
+            },
+            {
+                "field": "Direction",
+                "message": "🔄 SHORT→LONG reversal for {Sym/Int}"
+            },
+            {
+                "field": "Target #1",
+                "message": "💵 TARGET 1: {Sym/Int} hit at ${Target #1} | Profit: {Profit %}%"
+            },
+            {
+                "field": "Target #2",
+                "message": "💵💵 TARGET 2: {Sym/Int} hit at ${Target #2} | Profit: {Profit %}%"
+            }
         ]
     }
 }

@@ -17,10 +17,10 @@ from .serializers import (
 from  rest_framework import status
 from rest_framework import generics
 from .utils.csv_utils import fetch_ftp_bytes, parse_csv_bytes_to_dicts
-import re
+import re, logging
 from django.core.cache import cache
 
-
+logger = logging.getLogger(__name__)
 
 class CSVListView(generics.GenericAPIView):
     def get(self, request, pk):
@@ -212,8 +212,6 @@ class DeleteFavoriteView(generics.DestroyAPIView):
         )
 
 
-from django.db.models import Prefetch
-
 class FavoriteRowListView(APIView):
     def get(self, request, external_user_id):
         try:
@@ -332,11 +330,70 @@ class CustomAlertUpdateView(generics.UpdateAPIView):
     lookup_field = 'pk'
 
     def patch(self, request, *args, **kwargs):
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data = request.data, partial = True)
-        serializer.is_valid(raise_exception = True)
-        updated_alert = serializer.save()
-        return Response(serializer.data, status=status.HTTP_205_RESET_CONTENT)
+        try:
+            logger.info(f"PATCH request received for CustomAlert with pk={kwargs.get('pk')}")
+            logger.info(f"Request data: {request.data}")
+            logger.info(f"Request user: {request.user if hasattr(request, 'user') else 'Anonymous'}")
+            
+            instance = self.get_object()
+            logger.info(f"Found instance: {instance}")
+            
+            serializer = self.get_serializer(instance, data=request.data, partial=True)
+            
+            # Log before validation
+            logger.info(f"Serializer data before validation: {serializer.initial_data}")
+            
+            # Validate with detailed error handling
+            if not serializer.is_valid():
+                logger.error(f"Validation errors: {serializer.errors}")
+                return Response(
+                    {
+                        'detail': 'Validation failed',
+                        'errors': serializer.errors
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Save the updated alert
+            logger.info("Serializer is valid, saving...")
+            updated_alert = serializer.save()
+            logger.info(f"Alert saved successfully: {updated_alert}")
+            
+            # Return success response
+            return Response(
+                {
+                    'message': 'Alert updated successfully',
+                    'data': serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except CustomAlert.DoesNotExist:
+            logger.error(f"CustomAlert with pk={kwargs.get('pk')} does not exist")
+            return Response(
+                {'detail': 'Alert not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        except ValidationError as e:
+            logger.error(f"Validation error: {e.detail}")
+            return Response(
+                {
+                    'detail': 'Validation error',
+                    'errors': e.detail
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        except Exception as e:
+            logger.error(f"Unexpected error in CustomAlertUpdateView: {str(e)}", exc_info=True)
+            return Response(
+                {
+                    'detail': 'Internal server error',
+                    'error': str(e)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class CustomAlertDeleteView(generics.DestroyAPIView):

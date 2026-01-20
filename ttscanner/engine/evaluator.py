@@ -1,83 +1,40 @@
-import json, re
+import json, re, logging
 from datetime import datetime
 from typing import List
 from collections import defaultdict
 from django.conf import settings
 from ttscanner.models import SymbolState, TriggeredAlert, FileAssociation
 
+logger = logging.getLogger(__name__)
+
 with open(settings.BASE_DIR / "ttscanner/alert_rules.json", encoding="utf-8") as f:
     SYSTEM_ALERT_RULES = json.load(f)
+
 
 def safe_float(val):
     try:
         return float(str(val).replace(",", "")) if val not in (None, "") else None
     except Exception:
         return None
-    
 
-def lookup_any(row: dict, candidates):
-    lower = {k.strip().lower(): v for k, v in row.items()}
+
+def normalize_key(key: str) -> str:
+    return key.strip().lower().replace(" ", "").replace("/", "").replace("_", "")
+
+
+def lookup_any(row: dict, candidates: List[str]):
+    normalized_row = {normalize_key(k): v for k, v in row.items() if k is not None}
     for c in candidates:
-        val = lower.get(c.lower())
+        val = normalized_row.get(normalize_key(c))
         if val is not None:
             return val
     return None
 
 
-def get_algo_rules(algo):
-    if not algo:
-        return None
-    return SYSTEM_ALERT_RULES.get(algo.algo_name) or SYSTEM_ALERT_RULES.get(algo.algo_name.replace(" ", ""))
-
-
-def normalize_row_keys(row: dict) -> dict:
-    return {k.strip().lower(): v for k, v in row.items() if k is not None}
-
-
-def format_message(template: str, context: dict) -> str:
-    try:
-        return template.format(**context)
-    except Exception:
-        s = template
-        for k, v in context.items():
-            s = s.replace("{" + k + "}", str(v))
-        return s
-
-
 def extract_symbol_from_row(row: dict) -> str | None:
-    for key, value in row.items():
-        if not value:
-            continue
-
-        normalized = key.lower().replace(" ", "").replace("/", "")
-
-        if normalized in {"symbol", "sym", "symint", "ticker", "symbolinterval"}:
-            symbol = str(value).strip().upper()
-            if symbol:
-                return symbol
-
-    return None
-
-
-def get_row_value(row: dict, key: str) -> str:
-    """Get value from row, trying multiple key variations"""
-    # Try exact match first
-    if key in row:
-        return str(row[key])
-    
-    # Try case-insensitive
-    for k, v in row.items():
-        if k.lower() == key.lower():
-            return str(v)
-    
-    # Try partial match (remove spaces, #, etc)
-    clean_key = key.replace(" ", "").replace("#", "").replace("_", "").lower()
-    for k, v in row.items():
-        clean_k = k.replace(" ", "").replace("#", "").replace("_", "").lower()
-        if clean_k == clean_key:
-            return str(v)
-    
-    return ""
+    candidates = ["symbol", "sym", "symint", "ticker", "symbolinterval"]
+    symbol = lookup_any(row, candidates)
+    return str(symbol).upper() if symbol else None
 
 
 def group_alerts_by_symbol(alerts_data):
@@ -86,698 +43,339 @@ def group_alerts_by_symbol(alerts_data):
         symbol = alert.get("symbol")
         if symbol:
             symbol_groups[symbol].append(alert)
-    
-    # Create combined messages for each symbol
+
     combined_messages = []
-    
     for symbol, alerts in symbol_groups.items():
         if len(alerts) == 1:
-            # Single alert for this symbol
             combined_messages.append({
                 "symbol": symbol,
                 "message": alerts[0]["message"],
                 "alert_type": alerts[0].get("alert_type", "")
             })
         else:
-            # Multiple alerts - combine intelligently
             combined = combine_symbol_alerts(symbol, alerts)
             combined_messages.append({
                 "symbol": symbol,
                 "message": combined,
                 "alert_type": "combined"
             })
-    
     return combined_messages
 
 
 def combine_symbol_alerts(symbol, alerts):
-    direction_alerts = []
-    target1_alerts = []
-    target2_alerts = []
-    other_alerts = []
-    
-    # Store the full messages for targets to extract prices
-    target1_full_messages = []
-    target2_full_messages = []
-    
-    for alert in alerts:
-        message = alert["message"]
-        alert_type = alert.get("alert_type", "").lower()
-        
-        if "direction" in alert_type:
-            direction_alerts.append(message)
-        elif "target #1" in alert_type:
-            target1_alerts.append(message)
-            target1_full_messages.append(message)
-        elif "target #2" in alert_type:
-            target2_alerts.append(message)
-            target2_full_messages.append(message)
-        else:
-            other_alerts.append(message)
-    
-    parts = []
-    
-    # Handle direction alerts
-    if direction_alerts:
-        if len(direction_alerts) == 1:
-            dir_msg = direction_alerts[0]
-            if f"for {symbol}" in dir_msg:
-                parts.append(dir_msg)
-            else:
-                parts.append(f"{symbol}: {dir_msg}")
-        else:
-            directions = set()
-            for msg in direction_alerts:
-                if "LONG" in msg:
-                    directions.add("LONG")
-                elif "SHORT" in msg:
-                    directions.add("SHORT")
-            if directions:
-                parts.append(f"{symbol}: Position changed to {', '.join(directions)}")
-    
-    # Handle target alerts WITH PRICE INFORMATION
-    target_parts = []
-    
-    # Extract price from target #1 messages
-    if target1_alerts:
-        price = extract_target_price(target1_full_messages[0]) if target1_full_messages else ""
-        if price:
-            target_parts.append(f"🎯 Target #1 hit at {price}")
-        else:
-            target_parts.append("Target #1 hit")
-    
-    # Extract price from target #2 messages  
-    if target2_alerts:
-        price = extract_target_price(target2_full_messages[0]) if target2_full_messages else ""
-        if price:
-            target_parts.append(f"🎯 Target #2 hit at {price}")
-        else:
-            target_parts.append("Target #2 hit")
-    
-    if target_parts:
-        if len(target_parts) == 1:
-            parts.append(f"{symbol}: {target_parts[0]}")
-        else:
-            parts.append(f"{symbol}: {', '.join(target_parts)}")
-
-    if other_alerts:
-        if len(other_alerts) == 1:
-            parts.append(other_alerts[0])
-        else:
-            other_summary = f"{symbol}: Multiple alerts"
-            parts.append(other_summary)
-    
-    if len(parts) == 1:
-        return parts[0]
-    elif len(parts) == 2:
-        if parts[0].startswith(f"{symbol}:") and parts[1].startswith(f"{symbol}:"):
-            msg1 = parts[0].replace(f"{symbol}:", "").strip()
-            msg2 = parts[1].replace(f"{symbol}:", "").strip()
-            return f"{symbol}: {msg1} | {msg2}"
-        else:
-            return f"{parts[0]} | {parts[1]}"
-    else:
-        summary_parts = []
-        for part in parts:
-            if f"{symbol}:" in part:
-                summary_parts.append(part.replace(f"{symbol}:", "").strip())
-            else:
-                summary_parts.append(part)
-        
-        if summary_parts:
-            return f"{symbol}: " + " | ".join(summary_parts)
-        else:
-            return f"{symbol}: Multiple alerts triggered"
+    messages = [alert["message"] for alert in alerts]
+    return f"{symbol}: " + " | ".join(messages)
 
 
-def extract_target_price(message):
-    price_patterns = [
-        r'at\s+([\d,]+\.\d+)',  
-        r'@\s+([\d,]+\.\d+)',  
-        r'→\s+([\d,]+\.\d+)',  
-    ]
-    
-    for pattern in price_patterns:
-        match = re.search(pattern, message)
-        if match:
-            return match.group(1)
-    
-    decimal_match = re.search(r'([\d,]+\.\d+)', message)
-    if decimal_match:
-        return decimal_match.group(1)
-    
-    return ""
-
-def process_row_for_alerts(fa, algo, raw_row: dict) -> List[TriggeredAlert]:
-    alerts = []
-
-    if "ttscanner" not in fa.file_name.lower():
-        print(f"[SYSTEM] Skipping non-ttscanner file: {fa.file_name}")
-        return alerts
-
-    print(f"\n[SYSTEM] Processing row for file: {fa.file_name}")
-
-    if not raw_row:
-        print("[SYSTEM] Empty row received → skipping")
-        return alerts
-
-    # ========== SKIP ALERTS ON INITIAL UPLOAD ==========
-    if getattr(fa, "data_version", 1) == 0:
-        print("[SYSTEM] data_version = 0 → INITIAL UPLOAD, skipping all alerts")
-        return alerts
-
-    row = {k.strip(): v for k, v in raw_row.items() if k is not None}
-    print(f"[SYSTEM] Row keys: {list(row.keys())}")
+def detect_new_trade(row: dict, fired_map: dict) -> List[dict]:
+    alerts_data = []
 
     symbol = extract_symbol_from_row(row)
     if not symbol:
-        print("[SYSTEM] Symbol NOT FOUND in row → skipping")
-        return alerts
+        print("Skipping row: no symbol found")
+        return []
 
-    print(f"[SYSTEM] Processing symbol: {symbol}")
+    bars_raw = lookup_any(row, ["Bars Since Entry", "BarSinceEntry", "BarsSinceEntry"])
+    direction = (lookup_any(row, ["Direction", "Trade Direction"]) or "").strip().upper()
+    entry_price = lookup_any(row, ["Entry Price", "EntryPrice"]) or ""
 
-    state, _ = SymbolState.objects.get_or_create(
-        file_association=fa,
-        symbol=symbol
-    )
+    if not (isinstance(bars_raw, str) and bars_raw.strip().upper() == "NEW"):
+        print(f"{symbol}: Bars Since Entry is not 'NEW' ({bars_raw}), skipping new trade")
+        return []
 
-    prev = state.last_row_data or {}
-    fired_map = getattr(state, "last_triggered_alerts", {})
-    direction_field = next((k for k in row if "direction" in k.lower()), None)
-    target_datetime_fields = [
-        k for k in row
-        if "target" in k.lower() and ("date" in k.lower() or "datetime" in k.lower())
+    if direction not in ["LONG", "SHORT"]:
+        print(f"{symbol}: Invalid direction ({direction}), skipping new trade")
+        return []
+
+    alert_key = f"{symbol}_newtrade_{direction}"
+    if alert_key in fired_map:
+        print(f"{symbol}: Alert already fired ({alert_key}), skipping")
+        return []
+
+    system_alerts = SYSTEM_ALERT_RULES.get("TTScanner", {}).get("alerts", [])
+    message_template = None
+    for alert_cfg in system_alerts:
+        if normalize_key(alert_cfg.get("field")) == normalize_key("Bars Since Entry"):
+            if direction in alert_cfg["message"]:
+                message_template = alert_cfg["message"]
+                break
+
+    if not message_template:
+        message_template = f"🟢 New LONG position for {{Sym/Int}} at ${{Entry Price}}" if direction=="LONG" else f"🔴 New SHORT position for {{Sym/Int}} at ${{Entry Price}}"
+
+    message = message_template.replace("{Sym/Int}", symbol).replace("{Entry Price}", str(entry_price)).replace("{Bars Since Entry}", str(bars_raw))
+
+    fired_map[alert_key] = datetime.now().isoformat()
+
+    alerts_data.append({
+        "symbol": symbol,
+        "message": message,
+        "alert_type": "new_trade",
+        "alert_key": alert_key,
+        "timestamp": datetime.now(),
+    })
+
+    print(f"New trade detected: {message}")
+    return alerts_data
+
+
+def detect_flat_trade(row: dict, prev_row: dict, fired_map: dict) -> List[dict]:
+    alerts_data = []
+
+    symbol = extract_symbol_from_row(row)
+    if not symbol or not prev_row:
+        return []
+
+    prev_direction = (lookup_any(prev_row, ["Direction"]) or "").strip().upper()
+    curr_direction = (lookup_any(row, ["Direction"]) or "").strip().upper()
+
+    if "FLAT" not in curr_direction or prev_direction not in ["LONG", "SHORT"]:
+        return []
+
+    alert_key = f"{symbol}_flat_{prev_direction}"
+    if alert_key in fired_map:
+        return []
+
+    profit_factor = safe_float(lookup_any(row, ["Profit Factor", "ProfitFactor", "PF"]))
+    profit_str = str(profit_factor) if profit_factor is not None else "N/A"
+
+    system_alerts = SYSTEM_ALERT_RULES.get("TTScanner", {}).get("alerts", [])
+    message_template = None
+    for alert_cfg in system_alerts:
+        if normalize_key(alert_cfg.get("field")) == normalize_key("Direction"):
+            if prev_direction in alert_cfg["message"]:
+                message_template = alert_cfg["message"]
+                break
+    if not message_template:
+        message_template = f"🚫 [FLAT] {{Sym/Int}} | {prev_direction} position closed | Return: {{Profit Factor}}"
+
+    message = message_template.replace("{Sym/Int}", symbol).replace("{Profit Factor}", str(profit_str))
+
+    fired_map[alert_key] = datetime.now().isoformat()
+    alerts_data.append({
+        "symbol": symbol,
+        "message": message,
+        "alert_type": "flat_close",
+        "alert_key": alert_key,
+        "timestamp": datetime.now(),
+    })
+
+    print(message)
+    return alerts_data
+
+
+def detect_reversal_trade(row: dict, prev_row: dict, fired_map: dict) -> List[dict]:
+    alerts_data = []
+
+    symbol = extract_symbol_from_row(row)
+    if not symbol or not prev_row:
+        return []
+
+    prev_dir = (lookup_any(prev_row, ["Direction"]) or "").strip().upper()
+    curr_dir = (lookup_any(row, ["Direction"]) or "").strip().upper()
+
+    if prev_dir == curr_dir:
+        return []
+
+    valid_reversals = {("LONG", "SHORT"), ("SHORT", "LONG")}
+    if (prev_dir, curr_dir) not in valid_reversals:
+        return []
+
+    alert_key = f"{symbol}_reversal_{prev_dir}_to_{curr_dir}"
+    if alert_key in fired_map:
+        return []
+
+    system_alerts = SYSTEM_ALERT_RULES.get("TTScanner", {}).get("alerts", [])
+    message_template = None
+    for alert_cfg in system_alerts:
+        if normalize_key(alert_cfg.get("field")) == normalize_key("Direction"):
+            if f"{prev_dir}→{curr_dir}" in alert_cfg["message"]:
+                message_template = alert_cfg["message"]
+                break
+    if not message_template:
+        message_template = f"🔄 {prev_dir}→{curr_dir} reversal for {{Sym/Int}}"
+
+    message = message_template.replace("{Sym/Int}", symbol)
+    fired_map[alert_key] = datetime.now().isoformat()
+    alerts_data.append({
+        "symbol": symbol,
+        "message": message,
+        "alert_type": "reversal",
+        "alert_key": alert_key,
+        "timestamp": datetime.now(),
+    })
+
+    print(message)
+    return alerts_data
+
+
+def detect_target_hit(row: dict, state: SymbolState, fired_map: dict) -> List[dict]:
+    alerts_data = []
+
+    logger.debug(f"🔍 detect_target_hit called for row keys: {list(row.keys())}")
+    logger.debug(f"🔍 Row sample values: { {k: v for i, (k, v) in enumerate(row.items()) if i < 5} }")
+    
+    symbol = extract_symbol_from_row(row)
+    if not symbol:
+        logger.warning(f"❌ Could not extract symbol from row: {row.get('symbol', 'N/A')}")
+        return []
+    
+    logger.info(f"🎯 Checking targets for symbol: {symbol}")
+    logger.debug(f"🎯 Current state: target1_hit={getattr(state, 'target1_hit', False)}, target2_hit={getattr(state, 'target2_hit', False)}")
+    
+    # Define targets to check
+    targets = [
+        {"field": "Target #1", "hit_flag": "target1_hit"},
+        {"field": "Target #2", "hit_flag": "target2_hit"}
     ]
-
-    print(f"[SYSTEM] Direction field: {direction_field}")
-    print(f"[SYSTEM] Target datetime fields: {target_datetime_fields}")
-
-    # Load rules
-    system_rules = SYSTEM_ALERT_RULES.get("TTScanner")
-    if not system_rules:
-        print("[SYSTEM] No rules found → skipping")
-        return alerts
-
-    # ========== DEBUG: SEE WHAT'S CHANGING ==========
-    print(f"[DEBUG] Previous Direction: '{prev.get(direction_field, '')}'")
-    print(f"[DEBUG] Current Direction: '{row.get(direction_field, '')}'")
     
-    for tf in target_datetime_fields:
-        print(f"[DEBUG] Target '{tf}': prev='{prev.get(tf, '')}' curr='{row.get(tf, '')}'")
-
-    # ========== CHECK FOR INITIAL STATE (NO PREVIOUS DATA) ==========
-    # If this is the first time we're seeing this symbol, skip alerts
-    # because we don't know what "changed" from
-    if not prev:
-        print(f"[SYSTEM] First time processing {symbol} → skipping alerts (no previous state)")
-        # Still save the state for next time
-        state.last_row_data = row
-        state.save()
-        return alerts
-
-    # ========== DETECT CHANGES ==========
-    direction_changed = False
-    current_direction = row.get(direction_field, "")
+    # Log available target fields in the row
+    available_target_fields = [field for field in ["Target #1", "Target #2"] if field in row]
+    logger.debug(f"🎯 Available target fields in row: {available_target_fields}")
+    logger.debug(f"🎯 Target #1 value: {row.get('Target #1', 'NOT FOUND')}")
+    logger.debug(f"🎯 Target #2 value: {row.get('Target #2', 'NOT FOUND')}")
     
-    if direction_field and prev.get(direction_field, "") != current_direction:
-        direction_changed = True
-        print(f"[CHANGE] Direction changed: '{prev.get(direction_field, '')}' → '{current_direction}'")
+    for target in targets:
+        target_field = target["field"]
+        hit_flag = target["hit_flag"]
         
-        # Reset ALL fired alerts when direction changes (new position)
-        fired_map = {}
-        print(f"[RESET] Cleared fired alerts for new position")
-    
-    # Track which target datetimes changed (and their values)
-    target_changes = {}
-    for tf in target_datetime_fields:
-        prev_val = prev.get(tf, "")
-        curr_val = row.get(tf, "")
-        
-        # Special case: If previous was None/empty and this is first data after upload
-        # We should treat it as initial state, not a change
-        if not prev and not prev_val and curr_val:
-            print(f"[SKIP] Initial target value after upload → not treating as change")
-            continue
-            
-        if prev_val != curr_val:
-            # Extract target number
-            match = re.search(r'#?(\d+)', tf, re.IGNORECASE)
-            target_num = match.group(1) if match else "1"
-            target_key = f"target{target_num}"
-            
-            # Store both the field and the actual datetime value
-            target_changes[target_key] = {
-                "field": tf,
-                "value": curr_val,
-                "prev_value": prev_val
-            }
-            
-            print(f"[CHANGE] Target #{target_num} datetime changed: '{prev_val}' → '{curr_val}'")
-
-    # ========== COLLECT ALERTS DATA (FOR GROUPING) ==========
-    alerts_data = []  # Collect alert data before grouping
-    
-    for alert_config in system_rules.get("alerts", []):
-        template = alert_config.get("message", "")
-        alert_field = alert_config.get("field", "").lower()
-        
-        print(f"[ALERT] Processing: {alert_field}")
-
-        # ========== CHECK TRIGGER CONDITIONS ==========
-        should_trigger = False
-        
-        # DIRECTION ALERTS
-        if "direction" in alert_field and direction_changed:
-            # Only alert on REAL trading directions (not FLAT)
-            if current_direction in ["LONG", "SHORT"]:
-                should_trigger = True
-                print(f"[TRIGGER] Direction alert: {current_direction} position opened")
-        
-        # TARGET ALERTS
-        elif "target" in alert_field:
-            target_num = "1" if "target #1" in alert_field.lower() else "2"
-            target_key = f"target{target_num}"
-            
-            # Check ALL conditions:
-            # 1. Target datetime changed from empty to non-empty (target hit)
-            # 2. We're in a trading position (LONG/SHORT)
-            # 3. Target price is actually set
-            # 4. We have previous state to compare against (not initial upload)
-            
-            if target_key in target_changes:
-                change_info = target_changes[target_key]
-                prev_val = change_info["prev_value"]
-                curr_val = change_info["value"]
-                
-                # Condition 1: Changed from empty to non-empty (target just hit)
-                if not prev_val and curr_val:
-                    # Condition 2: Must be in trading position
-                    if current_direction in ["LONG", "SHORT"]:
-                        # Condition 3: Target price must be set
-                        price_field = f"Target #{target_num}"
-                        target_price = row.get(price_field, "")
-                        
-                        if target_price and target_price != "":
-                            should_trigger = True
-                            print(f"[TRIGGER] Target #{target_num} hit at {curr_val}")
-        
-        if not should_trigger:
-            print(f"[SKIP] No trigger for {alert_field}")
+        # Check if target field exists in row
+        if target_field not in row:
+            logger.debug(f"📭 Target field '{target_field}' not found in row for {symbol}")
             continue
         
-        # ========== FILL TEMPLATE ==========
-        values = {
-            "symbol": symbol,
-            "direction": current_direction,
-            "entry_price": row.get("Entry Price", ""),
-            "target1": row.get("Target #1", ""),
-            "target #1": row.get("Target #1", ""),
-            "target2": row.get("Target #2", ""),
-            "target #2": row.get("Target #2", ""),
-        }
+        # Get target value
+        target_value = lookup_any(row, [target_field])
+        logger.debug(f"🎯 Target '{target_field}' value for {symbol}: {target_value} (type: {type(target_value)})")
         
-        # Create message
-        message = template
-        for key, val in values.items():
-            placeholder = "{" + key + "}"
-            if placeholder in message:
-                message = message.replace(placeholder, str(val))
+        # Check if already hit
+        already_hit = getattr(state, hit_flag, False)
+        logger.debug(f"🎯 Already hit '{target_field}'? {already_hit}")
         
-        print(f"[ALERT FIRED] {message}")
-        
-        # ========== DEDUPLICATION ==========
-        # Create unique key based on WHAT actually changed
-        if "direction" in alert_field:
-            # For direction: symbol + direction value
-            alert_key = f"{symbol}_direction_{current_direction}"
-        elif "target" in alert_field:
-            # For target: symbol + target# + datetime value
-            target_num = "1" if "target #1" in alert_field.lower() else "2"
-            target_field = f"Target #{target_num} DateTime"
-            target_value = row.get(target_field, "")
-            alert_key = f"{symbol}_target{target_num}_{target_value}"
-        
-        print(f"[DEDUPE] Checking key: {alert_key}")
-        
-        if alert_key in fired_map:
-            print(f"[DUPLICATE] Already fired {alert_key} → SKIPPING")
+        # Skip if already hit
+        if already_hit:
+            logger.info(f"⏭️ Target '{target_field}' already hit for {symbol}, skipping")
             continue
         
-        # ========== STORE ALERT DATA FOR GROUPING ==========
-        alerts_data.append({
+        # Check if target has valid value
+        if not target_value:
+            logger.debug(f"📭 Target '{target_field}' has no value for {symbol}")
+            continue
+        
+        # Try to convert target value to float for numeric check
+        try:
+            target_float = float(target_value)
+            logger.debug(f"🔢 Target '{target_field}' numeric value: {target_float}")
+        except (ValueError, TypeError):
+            logger.warning(f"⚠️ Target '{target_field}' value '{target_value}' is not numeric for {symbol}")
+            continue
+        
+        # Get message template from system alerts
+        message_template = None
+        system_alerts = SYSTEM_ALERT_RULES.get("TTScanner", {}).get("alerts", [])
+        logger.debug(f"📋 Available system alerts: {len(system_alerts)}")
+        
+        for alert_cfg in system_alerts:
+            alert_field = normalize_key(alert_cfg.get("field", ""))
+            target_field_norm = normalize_key(target_field)
+            logger.debug(f"  Comparing: alert_field='{alert_field}' vs target_field='{target_field_norm}'")
+            
+            if alert_field == target_field_norm:
+                message_template = alert_cfg.get("message")
+                logger.debug(f"✅ Found message template for {target_field}: {message_template}")
+                break
+        
+        # Default message template if not found
+        if not message_template:
+            message_template = f"📊 {target_field}: {{Sym/Int}} hit at ${{{target_field}}} | Profit: {{Profit %}}%"
+            logger.debug(f"📝 Using default message template for {target_field}")
+        
+        # Get profit percentage
+        profit_pct = safe_float(lookup_any(row, ["Profit %", "Profit%", "Profit", "Profit_Pct"]))
+        # logger.debug(f"💰 Profit values found: 'Profit %'={row.get('Profit %')}, 'Profit%'={row.get('Profit%')}, 'Profit'={row.get('Profit')}")
+        # logger.debug(f"💰 Calculated profit_pct: {profit_pct}")
+        
+        # Build message
+        message = message_template.replace("{Sym/Int}", symbol)
+        message = message.replace(f"{{{target_field}}}", str(target_value))
+        
+        # Handle profit placeholder
+        if "{Profit %}" in message:
+            profit_display = f"{profit_pct:.2f}" if profit_pct is not None else "N/A"
+            message = message.replace("{Profit %}", profit_display)
+        elif "{Profit}" in message:
+            profit_display = f"{profit_pct:.2f}" if profit_pct is not None else "N/A"
+            message = message.replace("{Profit}", profit_display)
+        
+        logger.info(f"✅ Target hit detected! {symbol} - {target_field} = {target_value} (Profit: {profit_pct})")
+        
+        # Create alert key and store in fired map
+        alert_key = f"{symbol}_{target_field.replace(' ', '').lower()}"
+        current_time = datetime.now().isoformat()
+        fired_map[alert_key] = current_time
+        logger.debug(f"🗝️ Alert key: {alert_key}, timestamp: {current_time}")
+        
+        # Create alert data
+        alert_data = {
             "symbol": symbol,
             "message": message,
-            "alert_type": alert_field,
+            "alert_type": "target_hit",
             "alert_key": alert_key,
-            "timestamp": datetime.now()
-        })
+            "target_field": target_field,
+            "target_value": target_value,
+            "profit_pct": profit_pct,
+            "timestamp": datetime.now(),
+        }
+        alerts_data.append(alert_data)
         
-        # Mark as fired
-        fired_map[alert_key] = datetime.now().isoformat()
-        print(f"[STORED] Alert stored with key: {alert_key}")
+        # Update state
+        setattr(state, hit_flag, True)
+        logger.info(f"📝 Updated state: {hit_flag}=True for {symbol}")
+        
+        # Print message (console output)
+        print(f"🎯 [TARGET HIT] {message}")
+    
+    logger.info(f"📊 detect_target_hit completed for {symbol}. Alerts generated: {len(alerts_data)}")
+    return alerts_data
 
-    # ========== GROUP ALERTS BY SYMBOL ==========
-    if alerts_data:
-        grouped_alerts = group_alerts_by_symbol(alerts_data)
-        
-        for grouped_alert in grouped_alerts:
+
+def process_row_for_alerts(fa: FileAssociation, algo, raw_row: dict) -> List[TriggeredAlert]:
+    alerts = []
+    if "ttscanner" not in fa.file_name.lower() or not raw_row or getattr(fa, "data_version", 1) == 0:
+        return alerts
+
+    row = {k.strip(): v for k, v in raw_row.items() if k is not None}
+    symbol = extract_symbol_from_row(row)
+    if not symbol:
+        return alerts
+
+    state, _ = SymbolState.objects.get_or_create(file_association=fa, symbol=symbol)
+    fired_map = getattr(state, "last_alerts", {}) or {}
+    prev_row = state.last_row_data
+
+    for detector in [detect_flat_trade, detect_new_trade]:
+        for alert in detector(row, prev_row, fired_map) if detector != detect_new_trade else detector(row, fired_map):
             alerts.append(
                 TriggeredAlert(
                     file_association=fa,
                     alert_source="system",
-                    message=grouped_alert["message"],
-                    symbol=grouped_alert["symbol"]  # Store symbol for reference
+                    symbol=alert["symbol"],
+                    message=alert["message"],
                 )
             )
-        
-        print(f"[GROUPING] {len(alerts_data)} individual alerts grouped into {len(grouped_alerts)} messages")
-    else:
-        print(f"[GROUPING] No alerts to group for {symbol}")
 
-    # ========== CLEANUP OLD ALERTS ==========
-    # Remove alerts older than 1 day to prevent map from growing forever
-    current_time = datetime.now()
-    keys_to_remove = []
-    for key, timestamp_str in fired_map.items():
-        try:
-            timestamp = datetime.fromisoformat(timestamp_str)
-            if (current_time - timestamp).days > 1:
-                keys_to_remove.append(key)
-        except:
-            keys_to_remove.append(key)
-    
-    for key in keys_to_remove:
-        del fired_map[key]
-    
-    if keys_to_remove:
-        print(f"[CLEANUP] Removed {len(keys_to_remove)} old alert records")
+    for alert in detect_target_hit(row, state, fired_map):
+        alerts.append(
+            TriggeredAlert(
+                file_association=fa,
+                alert_source="system",
+                symbol=alert["symbol"],
+                message=alert["message"],
+            )
+        )
 
     state.last_row_data = row
-    state.last_triggered_alerts = fired_map
+    state.last_alerts = fired_map
     state.save()
-    
-    print(f"[SYSTEM] Finished processing {symbol}, alerts created: {len(alerts)}")
-    
+
     return alerts
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# import json, re
-# from typing import List
-# from django.conf import settings
-# from ttscanner.models import SymbolState, TriggeredAlert, FileAssociation
-
-# with open(settings.BASE_DIR / "ttscanner/alert_rules.json", encoding="utf-8") as f:
-#     SYSTEM_ALERT_RULES = json.load(f)
-
-# def safe_float(val):
-#     try:
-#         return float(str(val).replace(",", "")) if val not in (None, "") else None
-#     except Exception:
-#         return None
-    
-
-# def lookup_any(row: dict, candidates):
-#     lower = {k.strip().lower(): v for k, v in row.items()}
-#     for c in candidates:
-#         val = lower.get(c.lower())
-#         if val is not None:
-#             return val
-#     return None
-
-
-# def get_algo_rules(algo):
-#     if not algo:
-#         return None
-#     return SYSTEM_ALERT_RULES.get(algo.algo_name) or SYSTEM_ALERT_RULES.get(algo.algo_name.replace(" ", ""))
-
-
-# def normalize_row_keys(row: dict) -> dict:
-#     return {k.strip().lower(): v for k, v in row.items() if k is not None}
-
-
-# def format_message(template: str, context: dict) -> str:
-#     try:
-#         return template.format(**context)
-#     except Exception:
-#         s = template
-#         for k, v in context.items():
-#             s = s.replace("{" + k + "}", str(v))
-#         return s
-
-
-# def extract_symbol_from_row(row: dict) -> str | None:
-#     for key, value in row.items():
-#         if not value:
-#             continue
-
-#         normalized = key.lower().replace(" ", "").replace("/", "")
-
-#         if normalized in {"symbol", "sym", "symint", "ticker", "symbolinterval"}:
-#             symbol = str(value).strip().upper()
-#             if symbol:
-#                 return symbol
-
-#     return None
-
-
-
-# def process_row_for_alerts(fa, algo, raw_row: dict) -> List[TriggeredAlert]:
-#     alerts = []
-
-#     # Skip non-ttscanner files
-#     if "ttscanner" not in fa.file_name.lower():
-#         print(f"[SYSTEM] Skipping non-ttscanner file: {fa.file_name}")
-#         return alerts
-
-#     print(f"\n[SYSTEM] Processing row for file: {fa.file_name}")
-
-#     if not raw_row:
-#         print("[SYSTEM] Empty row received → skipping")
-#         return alerts
-
-#     # Skip initial import
-#     if getattr(fa, "data_version", 1) == 0:
-#         print("[SYSTEM] data_version = 0 → skipping alerts")
-#         return alerts
-
-#     # Normalize row
-#     row = {k.strip(): v for k, v in raw_row.items() if k is not None}
-#     print(f"[SYSTEM] Row keys: {list(row.keys())}")
-
-#     # Extract symbol
-#     symbol = extract_symbol_from_row(row)
-#     if not symbol:
-#         print("[SYSTEM] Symbol NOT FOUND in row → skipping")
-#         return alerts
-
-#     print(f"[SYSTEM] Processing symbol: {symbol}")
-
-#     # Load symbol state
-#     state, _ = SymbolState.objects.get_or_create(
-#         file_association=fa,
-#         symbol=symbol
-#     )
-
-#     prev = state.last_row_data or {}
-#     fired_map = getattr(state, "last_triggered_alerts", None) or getattr(state, "last_alerts", {}) or {}
-#     direction_field = next((k for k in row if "direction" in k.lower()), None)
-#     target_fields = [
-#         k for k in row
-#         if "target" in k.lower() and ("date" in k.lower() or "datetime" in k.lower())
-#     ]
-
-#     print(f"[SYSTEM] Direction field: {direction_field}")
-#     print(f"[SYSTEM] Target fields: {target_fields}")
-
-#     # Load rules
-#     system_rules = (
-#         SYSTEM_ALERT_RULES.get(algo.algo_name)
-#         or SYSTEM_ALERT_RULES.get(algo.algo_name.replace(" ", ""))
-#     )
-
-#     print(f"[SYSTEM] Rules for algo '{algo.algo_name}': {system_rules}")
-
-#     if not system_rules:
-#         print("[SYSTEM] No rules found → skipping")
-#         return alerts
-
-#     # Detect direction change
-#     direction_changed = (
-#         direction_field
-#         and prev.get(direction_field) != row.get(direction_field)
-#     )
-
-#     if direction_changed:
-#         print("[SYSTEM] Direction changed → resetting fired alerts")
-#         fired_map = {}
-
-#     for alert_config in system_rules.get("alerts", []):
-#         template = alert_config.get("message", "")
-#         print(f"[SYSTEM] Processing alert template: {template}")
-#         placeholders = re.findall(r"{(.*?)}", template)
-#         print(f"[SYSTEM] Placeholders found: {placeholders}")
-#         values = {}
-
-#         for ph in placeholders:
-#             ph_norm = re.sub(r"[\/_\-\s]", "", ph.lower())
-#             match = next(
-#                 (v for k, v in row.items()
-#                  if re.sub(r"[\/_\-\s]", "", k.lower()) == ph_norm),
-#                 ""
-#             )
-#             values[ph] = match
-
-#         values.setdefault("symbol", symbol)
-#         values.setdefault(
-#             "price",
-#             row.get("price") or row.get("last") or row.get("entry")
-#         )
-#         values.setdefault("entry", row.get("entry"))
-#         values.setdefault("direction", row.get(direction_field))
-
-#         # Determine trigger
-#         should_trigger = False
-
-#         for tf in target_fields:
-#             if prev.get(tf) != row.get(tf):
-#                 print(f"[SYSTEM] Target changed: {tf}")
-#                 should_trigger = True
-
-#         if direction_changed:
-#             print("[SYSTEM] Direction change trigger")
-#             should_trigger = True
-
-#         # Deduplication
-#         alert_signature = {
-#             "direction": row.get(direction_field),
-#             "targets": {tf: row.get(tf) for tf in target_fields}
-#         }
-
-#         alert_key = template
-
-#         if fired_map.get(alert_key) == alert_signature:
-#             print("[SYSTEM] Duplicate alert skipped")
-#             continue
-
-#         if should_trigger and values:
-#             message = template.format(**values)
-
-#             print(f"[SYSTEM ALERT] {message}")
-
-#             alerts.append(
-#                 TriggeredAlert(
-#                     file_association=fa,
-#                     alert_source="system",
-#                     message=message
-#                 )
-#             )
-
-#             fired_map[alert_key] = alert_signature
-
-#     # Persist state
-#     state.last_row_data = row
-#     state.last_price = row.get("last") or row.get("price") or row.get("entry")
-#     state.last_triggered_alerts = fired_map
-#     state.save(update_fields=[
-#         "last_row_data",
-#         "last_price",
-#         "last_alerts"
-#     ])
-#     print(f"[SYSTEM] Finished processing {symbol}, alerts fired: {len(alerts)}")
-
-#     return alerts
-
-
-
-
-# def process_row_for_alerts(fa: FileAssociation, algo, raw_row: dict) -> List[TriggeredAlert]:
-#     from ttscanner.models import SymbolState, TriggeredAlert
-
-#     alerts = []
-#     if not raw_row:
-#         return alerts
-
-#     row = {k.strip().lower(): v for k, v in raw_row.items() if k is not None}
-#     symbol = row.get("symbol") or row.get("ticker")
-#     if not symbol:
-#         return alerts
-#     symbol = str(symbol).strip()
-
-#     state, _ = SymbolState.objects.get_or_create(file_association=fa, symbol=symbol)
-#     prev = state.last_row_data or {}
-#     prev_alert_flags = prev.get("_alert_flags", {})
-
-#     price_val = row.get("last") or row.get("price") or row.get("entry")
-#     try:
-#         current_price = float(str(price_val).replace(",", ""))
-#     except Exception:
-#         current_price = None
-
-#     if current_price is None:
-#         return alerts
-
-#     target_keys = [k for k in row.keys() if re.match(r"^(target\s*#?\d+|tgt\d+)$", k, re.IGNORECASE)]
-#     for t in target_keys:
-#         target_val = row.get(t)
-#         if target_val is None:
-#             continue
-#         try:
-#             target_price = float(str(target_val).replace(",", ""))
-#         except Exception:
-#             continue
-
-#         flag_name = f"{t}_hit"
-#         if current_price >= target_price and not prev_alert_flags.get(flag_name, False):
-#             alerts.append(
-#                 TriggeredAlert(
-#                     file_association=fa,
-#                     alert_source="system",
-#                     message=f"{symbol}: {t} reached at {current_price}"
-#                 )
-#             )
-#             print("Target Hit")
-#             prev_alert_flags[flag_name] = True
-#         elif current_price < target_price:
-#             prev_alert_flags[flag_name] = False
-
-#     prev["_alert_flags"] = prev_alert_flags
-#     state.last_row_data = prev
-#     state.last_price = current_price
-#     state.save()
-
-#     return alerts

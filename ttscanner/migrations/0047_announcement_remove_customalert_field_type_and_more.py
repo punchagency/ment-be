@@ -24,15 +24,18 @@ class Migration(migrations.Migration):
             model_name='customalert',
             name='field_type',
         ),
-        migrations.AlterUniqueTogether(
-            name='favoriterow',
-            unique_together={('user', 'row_id', 'file_association')},
-        ),
+        # FIRST: Add the row_id field
         migrations.AddField(
             model_name='favoriterow',
             name='row_id',
             field=models.CharField(blank=True, max_length=36, null=True),
         ),
+        # THEN: Use it in unique_together
+        migrations.AlterUniqueTogether(
+            name='favoriterow',
+            unique_together={('user', 'row_id', 'file_association')},
+        ),
+        # OTHER operations continue...
         migrations.AddField(
             model_name='mentuser',
             name='password',

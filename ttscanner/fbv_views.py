@@ -1,6 +1,6 @@
 from rest_framework.response import Response
-from django.db import close_old_connections
-import signal
+# from django.db import close_old_connections
+# import signal
 from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -90,73 +90,46 @@ def logout_view(request):
     return Response({"detail": "Logged out successfully"}, status=status.HTTP_200_OK)
 
 
-# def sse_user_alerts(request, external_user_id):
-#     def event_stream():
-#         from django.db import close_old_connections
-        
-#         user_cache_key = f"user_exists_{external_user_id}"
-#         user_exists = cache.get(user_cache_key)
-        
-#         if user_exists is None:
-#             try:
-#                 close_old_connections()
-#                 MENTUser.objects.only('id').get(external_user_id=external_user_id)
-#                 cache.set(user_cache_key, True, timeout=300)
-#                 user_exists = True
-#             except MENTUser.DoesNotExist:
-#                 cache.set(user_cache_key, False, timeout=300)
-#                 yield f"data: {json.dumps({'error': 'User not found'})}\n\n"
-#                 return
-        
-#         if not user_exists:
-#             yield f"data: {json.dumps({'error': 'User not found'})}\n\n"
-#             return
+def sse_user_alerts(request, external_user_id):
+    """
+    SSE stream for user alerts.
+    Sends updates only when cache changes to avoid DB polling every request.
+    """
+    def event_stream():
+        last_snapshot = None
+        error_count = 0
 
-#         last_snapshot = []
-#         error_count = 0
-        
-#         while True:
-#             try:
-#                 time.sleep(2)
-#                 close_old_connections()  # Fresh connection
-                
-#                 cache_key = f"user_alerts_{external_user_id}"
-#                 current_snapshot = cache.get(cache_key)
-                
-#                 if current_snapshot is None:
-#                     alerts = CustomAlert.objects.filter(
-#                         user__external_user_id=external_user_id
-#                     ).only('id', 'last_value', 'is_active').order_by("id")
-                    
-#                     current_snapshot = [
-#                         {
-#                             "alert_id": a.id,
-#                             "last_value": a.last_value,
-#                             "is_active": a.is_active,
-#                         }
-#                         for a in alerts
-#                     ]
-#                     cache.set(cache_key, current_snapshot, timeout=30)
-                
-#                 if current_snapshot != last_snapshot:
-#                     last_snapshot = current_snapshot
-#                     yield f"data: {json.dumps(current_snapshot)}\n\n"
-#                     error_count = 0
-                    
-#             except Exception as e:
-#                 error_count += 1
-#                 print(f"SSE User Alerts Error ({error_count}): {e}")
-                
-#                 if error_count >= 3:
-#                     yield f"data: {json.dumps({'error': 'Connection lost, please refresh'})}\n\n"
-#                     break
-                
-#                 time.sleep(5)
+        while True:
+            try:
+                time.sleep(2)
+                current_snapshot = cache.get(f"user_alerts_{external_user_id}")
 
-#     response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
-#     response["Cache-Control"] = "no-cache"
-#     response["X-Accel-Buffering"] = "no"
-#     return response
+                if current_snapshot is None:
+                    continue
+
+                if current_snapshot != last_snapshot:
+                    last_snapshot = current_snapshot
+                    yield f"data: {json.dumps(current_snapshot)}\n\n"
+                    error_count = 0  
+
+            except GeneratorExit:
+                # Client disconnected
+                break
+            except Exception as e:
+                error_count += 1
+                print(f"SSE User Alerts Error ({error_count}): {e}")
+                if error_count >= 3:
+                    yield f"data: {json.dumps({'error': 'Connection lost, please refresh'})}\n\n"
+                    break
+                time.sleep(5)
+
+    response = StreamingHttpResponse(
+        event_stream(),
+        content_type="text/event-stream"
+    )
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"
+    return response
 
 
 

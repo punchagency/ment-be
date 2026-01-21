@@ -1,5 +1,7 @@
+# ttscanner_backend/celery.py
 from __future__ import absolute_import, unicode_literals
 import os
+import ssl
 from celery import Celery
 from celery.schedules import timedelta
 from dotenv import load_dotenv
@@ -7,7 +9,26 @@ from dotenv import load_dotenv
 load_dotenv()
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ttscanner_backend.settings")
 
+redis_url = os.getenv(
+    "REDIS_URL", 
+    "rediss://default:ATkiAAIncDJmOWZhNTA4MDBjMWE0YzhkOWU0ZGE4YzM4Yzg0MDY1NHAyMTQ2MjY@possible-dragon-14626.upstash.io:6379"
+)
+
+if redis_url.startswith("rediss://") and "ssl_cert_reqs" not in redis_url:
+    redis_url += "?ssl_cert_reqs=none"
+
 app = Celery("ttscanner_backend")
+
+# Configure Celery BEFORE loading Django settings
+app.conf.update(
+    broker_url=redis_url,
+    result_backend=redis_url,
+    broker_use_ssl={'ssl_cert_reqs': ssl.CERT_NONE},
+    redis_backend_use_ssl={'ssl_cert_reqs': ssl.CERT_NONE},
+    broker_connection_retry_on_startup=True,
+)
+
+# Now load Django settings
 app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
@@ -17,8 +38,6 @@ app.conf.beat_schedule = {
         'schedule': 60,
     },
 }
-
-
 
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
@@ -38,6 +57,3 @@ def setup_periodic_tasks(sender, **kwargs):
             import_file_association.s(file.id),
             name=f"import_{file.file_name}"
         )
-
-
-

@@ -4,7 +4,10 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
 import logging, re
 from django.conf import settings
-from ttscanner.models import FileAssociation, MENTUser, UserSettings, TriggeredAlert, MainData
+from ttscanner.models import (
+    FileAssociation, MENTUser, UserSettings, 
+    TriggeredAlert, MainData, CustomAlert
+)
 from ttscanner.utils.csv_utils import fetch_ftp_bytes, is_file_changed, store_csv_data
 from ttscanner.engine.evaluator import lookup_any, process_row_for_alerts
 from ttscanner.utils.email_utils import send_alert_email
@@ -12,6 +15,27 @@ from ttscanner.utils.sms_utils import send_alert_sms
 from ttscanner.utils.text_utils import html_to_plain_text
 
 logger = logging.getLogger(__name__)
+
+def update_user_alert_cache(user_external_id):
+    """
+    Refresh the cache snapshot for a specific user.
+    This will be used by SSE to send updates only when things change.
+    """
+    alerts = CustomAlert.objects.filter(user__external_user_id=user_external_id).only(
+        'id', 'last_value', 'is_active'
+    ).order_by('id')
+
+    snapshot = [
+        {
+            "alert_id": a.id,
+            "last_value": a.last_value,
+            "is_active": a.is_active,
+        }
+        for a in alerts
+    ]
+
+    cache.set(f"user_alerts_{user_external_id}", snapshot, timeout=None)
+
 
 
 @shared_task
@@ -245,9 +269,18 @@ def evaluate_global_custom_alerts(fa, rows):
         if alerts_to_update:
             type(alerts_to_update[0]).objects.bulk_update(alerts_to_update, ["last_value", "is_active"])
 
+            for alert in alerts_to_update:
+                if hasattr(alert, 'user') and alert.user:
+                    update_user_alert_cache(alert.user.external_user_id)
+
     if triggered:
         TriggeredAlert.objects.bulk_create(triggered)
         print(f"[GC ALERTS] {len(triggered)} alerts triggered for {fa.file_name}")
+
+        for ta in triggered:
+            user_id = ta.custom_alert.user.external_user_id if ta.custom_alert and ta.custom_alert.user else None
+            if user_id:
+                update_user_alert_cache(user_id)
     else:
         print(f"[GC ALERTS] No alerts triggered for {fa.file_name}")
 

@@ -23,7 +23,11 @@ from .regular_user_views import(
     DeleteFavoriteView, CustomAlertView, 
     UserTriggeredAlertsView
 )
-from .fbv_views import announcement_log, send_announcement, login, logout_view, sse_file_updates
+from .fbv_views import (
+    announcement_log, send_announcement, login, 
+    logout_view, sse_file_updates, sse_user_alerts,
+    triggered_alerts_count, file_associations_count, global_alerts_count
+)
 
 urlpatterns = [
     path('algos/', AlgoListView.as_view(), name='algo-list'),
@@ -43,7 +47,9 @@ urlpatterns = [
     path('intervals/delete/<int:pk>/', IntervalDeleteView.as_view(), name='interval-delete'),
     
     path('file-associations/create/', FileAssociationCreateView.as_view(), name='fa-create'),
+
     path('file-associations/', FileAssociationListView.as_view(), name='fa-list'),
+    
     path('file-associations/upload/<int:pk>/', CSVUploadView.as_view(), name='fa-upload'),
     path('file-associations/update/<int:pk>/', FileAssociationUpdateView.as_view(), name='fa-update'),
     path('file-associations/delete/<int:pk>/', FileAssociationDeleteView.as_view(), name='fa-delete'),
@@ -51,7 +57,13 @@ urlpatterns = [
     path('global-alert/update/<int:pk>/', GlobalAlertUpdateView.as_view(), name='ga-update'),
     path('global-alert/delete/<int:pk>/', GlobalAlertDeleteView.as_view(), name='ga-delete'),
     path('global-alert/all/', GlobalAlertListView.as_view(), name='ga-all'),
+
     path('alert-logs/admin/', TriggeredAlertsAdminView.as_view(), name='alert-logs-admin'),
+
+    path('alert-count/admin/', triggered_alerts_count, name='alert-count-admin'),
+    path('file-count/admin/', file_associations_count, name='file-count-admin'),
+    path('global-alert-count/admin/', global_alerts_count, name='global-alert-count-admin'),
+
     path('csv-data/<int:pk>/', CSVListView.as_view(), name='csv-data'),
     path('csv-headers/<int:pk>/', CSVHeaderView.as_view(), name='csv-headers'),
     path('sym-int/<int:pk>/', SymIntListView.as_view(), name='sym-int'),
@@ -60,7 +72,7 @@ urlpatterns = [
     path('fav-row/delete/<int:pk>/', DeleteFavoriteView.as_view(), name='fav-row-delete'),
     path('fav-row-list/<int:external_user_id>/', FavoriteRowListView.as_view(), name='fav-row-all'),   
     path('sse/<int:pk>/', sse_file_updates, name='sse_file_updates'),  
-    # path('user-alert/sse/<int:external_user_id>/', sse_user_alerts, name='sse_user_alerts'),   
+    path('user-alert/sse/<int:external_user_id>/', sse_user_alerts, name='sse_user_alerts'),   
     
 
     path('announcement/send/', send_announcement, name='send_announcement'),

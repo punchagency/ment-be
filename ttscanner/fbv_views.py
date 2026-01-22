@@ -7,7 +7,7 @@ from rest_framework.decorators import api_view
 from .tasks import send_announcement_sms_task
 from django.contrib.auth import logout
 from django.views.decorators.csrf import csrf_exempt
-from .models import Announcement, CustomAlert, FileAssociation, MENTUser, MainData
+from .models import Announcement, MENTUser, TriggeredAlert, FileAssociation, GlobalAlertRule
 import uuid, json, time, re
 from django.core.cache import cache
 
@@ -45,7 +45,6 @@ def announcement_log(request):
 
     return Response(data)
 
-
 @api_view(["POST"])
 def login(request):
     username = request.data.get("username")
@@ -81,6 +80,27 @@ def login(request):
             "email": user.email,
         }
     }, status=status.HTTP_200_OK)
+
+
+@api_view(["GET"])
+def triggered_alerts_count(request):
+    count = TriggeredAlert.objects.filter(
+        alert_source__in=['global', 'system']
+    ).count()
+    return Response({"totalTriggeredAlerts": count})
+
+
+@api_view(["GET"])
+def file_associations_count(request):
+    count = FileAssociation.objects.count()
+    return Response({"totalFiles": count})
+
+
+
+@api_view(["GET"])
+def global_alerts_count(request):
+    count = GlobalAlertRule.objects.count()
+    return Response({"totalAlerts": count})
 
 
 @csrf_exempt

@@ -108,15 +108,6 @@ DATABASES = {
     }
 }
 
-# Close DB connections after each request
-from django.db import connection
-from django.core.signals import request_finished
-from django.dispatch import receiver
-
-@receiver(request_finished)
-def close_connection(**kwargs):
-    connection.close_if_unusable_or_obsolete()
-
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},

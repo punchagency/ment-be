@@ -11,6 +11,11 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ttscanner_backend.settings")
 
 redis_url = os.getenv("REDIS_URL")
 
+# FIX: Handle the ${REDIS_URL} placeholder issue
+if not redis_url or '${REDIS_URL}' in redis_url:
+    # If REDIS_URL is not set or contains placeholder, use direct URL
+    redis_url = "rediss://default:ATkiAAIncDJmOWZhNTA4MDBjMWE0YzhkOWU0ZGE4YzM4Yzg0MDY1NHAyMTQ2MjY@possible-dragon-14626.upstash.io:6379"
+
 app = Celery("ttscanner_backend")
 
 # Configure Celery BEFORE loading Django settings

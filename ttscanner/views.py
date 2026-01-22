@@ -245,15 +245,22 @@ class FileAssociationDeleteView(generics.DestroyAPIView):
 
 class FileAssociationListView(ListAPIView):
     serializer_class = FileAssociationListSerializer
-    
+
     def get_queryset(self):
-        return FileAssociation.objects.select_related(
-            'algo', 'group', 'interval'
-        ).only(
-            'id', 'algo_name_copy', 'group_name_copy', 'interval_name_copy',
-            'status', 'file_name', 'data_version', 'last_fetched_at',
-            'algo__id', 'group__id', 'interval__id'
-        ).order_by('-created_at')
+        return FileAssociation.objects.select_related('algo', 'group', 'interval')\
+            .only(
+                'id',
+                'file_name',
+                'file_path',
+                'algo__algo_name',
+                'group__group_name',
+                'interval__interval_name',
+                'algo_name_copy',
+                'group_name_copy',
+                'interval_name_copy',
+            ).order_by('-created_at')
+
+
 
 
 class CSVUploadView(generics.GenericAPIView):

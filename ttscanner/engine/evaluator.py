@@ -7,9 +7,17 @@ from ttscanner.models import SymbolState, TriggeredAlert, FileAssociation
 
 logger = logging.getLogger(__name__)
 
-with open(settings.BASE_DIR / "ttscanner/alert_rules.json", encoding="utf-8") as f:
-    SYSTEM_ALERT_RULES = json.load(f)
+# DON'T load JSON here - wait until first use
+_SYSTEM_ALERT_RULES = None
 
+def get_alert_rules():
+    """Load JSON only when needed"""
+    global _SYSTEM_ALERT_RULES
+    if _SYSTEM_ALERT_RULES is None:
+        # Load with proper encoding
+        with open(settings.BASE_DIR / "ttscanner/alert_rules.json", 'r', encoding='utf-8') as f:
+            _SYSTEM_ALERT_RULES = json.load(f)
+    return _SYSTEM_ALERT_RULES
 
 def safe_float(val):
     try:
@@ -17,10 +25,8 @@ def safe_float(val):
     except Exception:
         return None
 
-
 def normalize_key(key: str) -> str:
     return key.strip().lower().replace(" ", "").replace("/", "").replace("_", "")
-
 
 def lookup_any(row: dict, candidates: List[str]):
     normalized_row = {normalize_key(k): v for k, v in row.items() if k is not None}
@@ -30,12 +36,10 @@ def lookup_any(row: dict, candidates: List[str]):
             return val
     return None
 
-
 def extract_symbol_from_row(row: dict) -> str | None:
     candidates = ["symbol", "sym", "symint", "ticker", "symbolinterval"]
     symbol = lookup_any(row, candidates)
     return str(symbol).upper() if symbol else None
-
 
 def group_alerts_by_symbol(alerts_data):
     symbol_groups = defaultdict(list)
@@ -61,11 +65,9 @@ def group_alerts_by_symbol(alerts_data):
             })
     return combined_messages
 
-
 def combine_symbol_alerts(symbol, alerts):
     messages = [alert["message"] for alert in alerts]
     return f"{symbol}: " + " | ".join(messages)
-
 
 def detect_new_trade(row: dict, fired_map: dict) -> List[dict]:
     alerts_data = []
@@ -92,7 +94,8 @@ def detect_new_trade(row: dict, fired_map: dict) -> List[dict]:
         print(f"{symbol}: Alert already fired ({alert_key}), skipping")
         return []
 
-    system_alerts = SYSTEM_ALERT_RULES.get("TTScanner", {}).get("alerts", [])
+    # FIXED LINE: Use get_alert_rules() instead of SYSTEM_ALERT_RULES
+    system_alerts = get_alert_rules().get("TTScanner", {}).get("alerts", [])
     message_template = None
     for alert_cfg in system_alerts:
         if normalize_key(alert_cfg.get("field")) == normalize_key("Bars Since Entry"):
@@ -118,7 +121,6 @@ def detect_new_trade(row: dict, fired_map: dict) -> List[dict]:
     print(f"New trade detected: {message}")
     return alerts_data
 
-
 def detect_flat_trade(row: dict, prev_row: dict, fired_map: dict) -> List[dict]:
     alerts_data = []
 
@@ -139,7 +141,8 @@ def detect_flat_trade(row: dict, prev_row: dict, fired_map: dict) -> List[dict]:
     profit_factor = safe_float(lookup_any(row, ["Profit Factor", "ProfitFactor", "PF"]))
     profit_str = str(profit_factor) if profit_factor is not None else "N/A"
 
-    system_alerts = SYSTEM_ALERT_RULES.get("TTScanner", {}).get("alerts", [])
+    # FIXED LINE: Use get_alert_rules() instead of SYSTEM_ALERT_RULES
+    system_alerts = get_alert_rules().get("TTScanner", {}).get("alerts", [])
     message_template = None
     for alert_cfg in system_alerts:
         if normalize_key(alert_cfg.get("field")) == normalize_key("Direction"):
@@ -163,7 +166,6 @@ def detect_flat_trade(row: dict, prev_row: dict, fired_map: dict) -> List[dict]:
     print(message)
     return alerts_data
 
-
 def detect_reversal_trade(row: dict, prev_row: dict, fired_map: dict) -> List[dict]:
     alerts_data = []
 
@@ -185,7 +187,8 @@ def detect_reversal_trade(row: dict, prev_row: dict, fired_map: dict) -> List[di
     if alert_key in fired_map:
         return []
 
-    system_alerts = SYSTEM_ALERT_RULES.get("TTScanner", {}).get("alerts", [])
+    # FIXED LINE: Use get_alert_rules() instead of SYSTEM_ALERT_RULES
+    system_alerts = get_alert_rules().get("TTScanner", {}).get("alerts", [])
     message_template = None
     for alert_cfg in system_alerts:
         if normalize_key(alert_cfg.get("field")) == normalize_key("Direction"):
@@ -207,7 +210,6 @@ def detect_reversal_trade(row: dict, prev_row: dict, fired_map: dict) -> List[di
 
     print(message)
     return alerts_data
-
 
 def detect_target_hit(row: dict, state: SymbolState, fired_map: dict) -> List[dict]:
     alerts_data = []
@@ -270,9 +272,9 @@ def detect_target_hit(row: dict, state: SymbolState, fired_map: dict) -> List[di
             logger.warning(f"⚠️ Target '{target_field}' value '{target_value}' is not numeric for {symbol}")
             continue
         
-        # Get message template from system alerts
+        # FIXED LINE: Use get_alert_rules() instead of SYSTEM_ALERT_RULES
         message_template = None
-        system_alerts = SYSTEM_ALERT_RULES.get("TTScanner", {}).get("alerts", [])
+        system_alerts = get_alert_rules().get("TTScanner", {}).get("alerts", [])
         logger.debug(f"📋 Available system alerts: {len(system_alerts)}")
         
         for alert_cfg in system_alerts:
@@ -292,8 +294,6 @@ def detect_target_hit(row: dict, state: SymbolState, fired_map: dict) -> List[di
         
         # Get profit percentage
         profit_pct = safe_float(lookup_any(row, ["Profit %", "Profit%", "Profit", "Profit_Pct"]))
-        # logger.debug(f"💰 Profit values found: 'Profit %'={row.get('Profit %')}, 'Profit%'={row.get('Profit%')}, 'Profit'={row.get('Profit')}")
-        # logger.debug(f"💰 Calculated profit_pct: {profit_pct}")
         
         # Build message
         message = message_template.replace("{Sym/Int}", symbol)
@@ -337,7 +337,6 @@ def detect_target_hit(row: dict, state: SymbolState, fired_map: dict) -> List[di
     
     logger.info(f"📊 detect_target_hit completed for {symbol}. Alerts generated: {len(alerts_data)}")
     return alerts_data
-
 
 def process_row_for_alerts(fa: FileAssociation, algo, raw_row: dict) -> List[TriggeredAlert]:
     alerts = []

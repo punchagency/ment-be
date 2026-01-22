@@ -353,45 +353,17 @@ class SymbolState(models.Model):
 class UserSettings(models.Model):
     DELIVERY_CHOICES = ['dashboard', 'email', 'sms']
 
-    user = models.OneToOneField(
-        MENTUser, on_delete=models.CASCADE, related_name='settings', db_index=True
-    )
-    theme = models.CharField(
-        max_length=15,
-        choices=[('light', 'Light'), ('dark', 'Dark'), ('color-blind', 'Color Blind')],
-        default='dark'
-    )
-    color_mappings = models.JSONField(default=dict, blank=True, help_text="User-selected colors for color-blind theme")
-
-    alerts_enabled = models.BooleanField(default=True, db_index=True)
+    user = models.OneToOneField(MENTUser, on_delete=models.CASCADE, related_name='settings', db_index=True)  # ⚡ INDEX
+    theme = models.CharField(max_length=10, choices=[('light', 'Light'), ('dark', 'Dark')], default='dark')
+    alerts_enabled = models.BooleanField(default=True, db_index=True)  # ⚡ INDEX
     delivery_methods = models.JSONField(default=list, blank=True)
-    alert_email = models.EmailField(null=True, blank=True, db_index=True)
+    alert_email = models.EmailField(null=True, blank=True, db_index=True)  # ⚡ INDEX
     alert_phone = models.CharField(max_length=30, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)  # ⚡ INDEX
 
     class Meta:
         db_table = 'ttscanner_usersettings'
-
-
-class FileColorMapping(models.Model):
-    file = models.ForeignKey(FileAssociation, on_delete=models.CASCADE, related_name="color_mappings")
-    color_code = models.CharField(max_length=7)
-    meaning = models.CharField(max_length=255)
-    alternatives = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text="Dynamically generated color-blind-friendly alternatives"
-    )
-    user_custom = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text="User-defined alternative colors if they override the auto ones"
-    )
-
-    class Meta:
-        unique_together = ('file', 'color_code')
-
 
 
 class Announcement(models.Model):

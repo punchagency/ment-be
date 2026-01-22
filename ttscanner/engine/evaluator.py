@@ -7,7 +7,6 @@ from ttscanner.models import SymbolState, TriggeredAlert, FileAssociation
 
 logger = logging.getLogger(__name__)
 
-# DON'T load JSON here - wait until first use
 _SYSTEM_ALERT_RULES = None
 
 def get_alert_rules():

@@ -9,13 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "ttscanner_backend.settings")
 
-redis_url = os.getenv(
-    "REDIS_URL", 
-    "rediss://default:ATkiAAIncDJmOWZhNTA4MDBjMWE0YzhkOWU0ZGE4YzM4Yzg0MDY1NHAyMTQ2MjY@possible-dragon-14626.upstash.io:6379"
-)
-
-if redis_url.startswith("rediss://") and "ssl_cert_reqs" not in redis_url:
-    redis_url += "?ssl_cert_reqs=none"
+redis_url = os.getenv("REDIS_URL")
 
 app = Celery("ttscanner_backend")
 

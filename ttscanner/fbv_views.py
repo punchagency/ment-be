@@ -1,6 +1,4 @@
 from rest_framework.response import Response
-# from django.db import close_old_connections
-# import signal
 from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -8,7 +6,7 @@ from .tasks import send_announcement_sms_task
 from django.contrib.auth import logout
 from django.views.decorators.csrf import csrf_exempt
 from .models import Announcement, MENTUser, TriggeredAlert, FileAssociation, GlobalAlertRule
-import uuid, json, time, re
+import uuid, json, time
 from django.core.cache import cache
 
 
@@ -111,69 +109,76 @@ def logout_view(request):
 
 
 def sse_user_alerts(request, external_user_id):
-    """
-    SSE stream for user alerts.
-    Sends updates only when cache changes to avoid DB polling every request.
-    """
+
     def event_stream():
         last_snapshot = None
         error_count = 0
 
         while True:
+            time.sleep(2)
+
             try:
-                time.sleep(2)
-                current_snapshot = cache.get(f"user_alerts_{external_user_id}")
+                current_snapshot = cache.get(
+                    f"user_alerts_{external_user_id}",
+                    default=None
+                )
 
-                if current_snapshot is None:
-                    continue
-
-                if current_snapshot != last_snapshot:
-                    last_snapshot = current_snapshot
-                    yield f"data: {json.dumps(current_snapshot)}\n\n"
-                    error_count = 0  
-
-            except GeneratorExit:
-                # Client disconnected
-                break
             except Exception as e:
+                print("Redis error in SSE:", e)
                 error_count += 1
-                print(f"SSE User Alerts Error ({error_count}): {e}")
-                if error_count >= 3:
-                    yield f"data: {json.dumps({'error': 'Connection lost, please refresh'})}\n\n"
-                    break
-                time.sleep(5)
 
-    response = StreamingHttpResponse(
-        event_stream(),
-        content_type="text/event-stream"
-    )
+                if error_count >= 3:
+                    yield "data: {\"error\": \"Live updates unavailable\"}\n\n"
+                    break
+
+                continue
+
+            if current_snapshot is None:
+                continue
+
+            if current_snapshot != last_snapshot:
+                last_snapshot = current_snapshot
+                yield f"data: {json.dumps(current_snapshot)}\n\n"
+                error_count = 0
+
+    response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"
     return response
 
 
-
 def sse_file_updates(request, pk):
+
     def event_stream():
         last_version = None
+        error_count = 0
 
         while True:
             time.sleep(2)
 
-            version = cache.get(f"fa_version_{pk}")
+            try:
+                version = cache.get(f"fa_version_{pk}", default=None)
+            except Exception as e:
+                print("Redis error in file SSE:", e)
+                error_count += 1
+
+                if error_count >= 3:
+                    yield "data: {\"error\": \"Live updates unavailable\"}\n\n"
+                    break
+
+                continue
+
             if version is None:
-                continue  
+                continue
 
             if version != last_version:
                 payload = cache.get(f"fa_data_{pk}")
                 if payload:
-                    yield f"data: {json.dumps(payload)}\n\n"
                     last_version = version
+                    yield f"data: {json.dumps(payload)}\n\n"
+                    error_count = 0
 
-    response = StreamingHttpResponse(
-        event_stream(),
-        content_type="text/event-stream"
-    )
+    response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"
     return response

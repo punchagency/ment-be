@@ -148,15 +148,10 @@ REDIS_URL = os.getenv("REDIS_URL")
 
 CACHES = {
     "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": REDIS_URL,
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SSL": True,
-            "SSL_CERT_REQS": ssl.CERT_NONE,
-        },
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }
+
 
 # Celery
 CELERY_BROKER_URL = REDIS_URL

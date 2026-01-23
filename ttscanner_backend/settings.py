@@ -142,9 +142,8 @@ REST_FRAMEWORK = {
     ]
 }
 
-# Redis / Celery
 # Redis
-REDIS_URL = os.getenv("REDIS_URL")
+REDIS_URL = os.getenv("REDIS_URL", "rediss://default:ATkiAAIncDJmOWZhNTA4MDBjMWE0YzhkOWU0ZGE4YzM4Yzg0MDY1NHAyMTQ2MjY@possible-dragon-14626.upstash.io:6379")
 
 CACHES = {
     "default": {
@@ -165,6 +164,11 @@ CELERY_REDIS_BACKEND_USE_SSL = {
     "ssl_cert_reqs": ssl.CERT_NONE
 }
 
+# Add these two lines to help with Upstash connectivity
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_EVENT_SERIALIZER = 'json'
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
 
 # Email (SMTP)
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")

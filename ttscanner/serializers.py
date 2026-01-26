@@ -538,7 +538,6 @@ class CustomAlertUpdateSerializer(serializers.ModelSerializer):
         return data
 
 
-
 class UserSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserSettings

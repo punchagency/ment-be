@@ -182,8 +182,9 @@ class MainData(models.Model):
     
     class Meta:
         db_table = 'main_data'
+        unique_together = ('file_association',)
         indexes = [
-            models.Index(fields=['file_association', '-last_updated']),  # Latest data per file
+            models.Index(fields=['file_association', '-last_updated']), 
         ]
 
 
@@ -308,6 +309,7 @@ class TriggeredAlert(models.Model):
     triggered_at = models.DateTimeField(auto_now_add=True, db_index=True)  # ⚡ INDEX
     acknowledged = models.BooleanField(default=False, db_index=True)  # ⚡ INDEX
     message = models.TextField()
+    sent_to_ui = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'ttscanner_triggeredalert'

@@ -18,18 +18,6 @@ def read_uploaded_file_bytes(uploaded_file):
     return uploaded_file.read()
 
 
-
-# def fetch_url_bytes(url: str, timeout=10):
-#     resp = requests.get(url, timeout=timeout)
-
-#     content = resp.content
-#     resp.raise_for_status()
-#     if content.startswith(b"<html") or content.startswith(b"<!DOCTYPE html"):
-#         raise ValueError("The URL returned HTML, not CSV. Use a direct CSV download link.")
-    
-#     return resp.content
-
-
 def fetch_ftp_bytes(file_path):
     FTP_HOST = "ftp.ment.com"
     FTP_USER = "Laiba@ment.com"  

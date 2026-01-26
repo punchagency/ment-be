@@ -314,6 +314,7 @@ class CSVUploadView(generics.GenericAPIView):
             "algo": fa.algo.algo_name if fa.algo else "Unknown"
         }, status=201)
     
+    
 
 class GlobalAlertCreateView(generics.CreateAPIView):
     serializer_class = GlobalAlertCreateSerializer

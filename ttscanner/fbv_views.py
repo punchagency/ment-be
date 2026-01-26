@@ -8,6 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import Announcement, MENTUser, TriggeredAlert, FileAssociation, GlobalAlertRule
 import uuid, json, time
 from django.core.cache import cache
+from django.db.models import Q
 
 
 @api_view(["POST"])
@@ -109,42 +110,38 @@ def logout_view(request):
 
 
 def sse_user_alerts(request, external_user_id):
-
     def event_stream():
-        last_snapshot = None
-        error_count = 0
-
+        # This 'external_user_id' comes from the URL /sse/2/
+        print(f"--- SSE Connection Opened for External ID: {external_user_id} ---")
+        
         while True:
+            alerts = TriggeredAlert.objects.filter(
+                custom_alert__user__external_user_id=external_user_id,
+                sent_to_ui=False
+            )
+
+            for alert in alerts:
+                print(f"MATCH FOUND: Sending Alert {alert.id} to External ID {external_user_id}")
+                payload = {
+                    "id": alert.id,
+                    "message": alert.message,
+                    "symbol": alert.symbol or "N/A",
+                    "triggered_at": alert.triggered_at.isoformat(),
+                    "source": alert.alert_source
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                
+                alert.sent_to_ui = True
+                alert.save(update_fields=["sent_to_ui"])
+
+            yield ": heartbeat\n\n"
             time.sleep(2)
-
-            try:
-                current_snapshot = cache.get(
-                    f"user_alerts_{external_user_id}",
-                    default=None
-                )
-
-            except Exception as e:
-                print("Redis error in SSE:", e)
-                error_count += 1
-
-                if error_count >= 3:
-                    yield "data: {\"error\": \"Live updates unavailable\"}\n\n"
-                    break
-
-                continue
-
-            if current_snapshot is None:
-                continue
-
-            if current_snapshot != last_snapshot:
-                last_snapshot = current_snapshot
-                yield f"data: {json.dumps(current_snapshot)}\n\n"
-                error_count = 0
 
     response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"
     return response
+
 
 
 def sse_file_updates(request, pk):

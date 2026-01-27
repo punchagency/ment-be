@@ -111,13 +111,17 @@ def logout_view(request):
 
 from django.db.models import Q
 
-MAX_ALERTS_PER_LOOP = 10  # just an example
-
-import asyncio
+MAX_ALERTS_PER_LOOP = 10  
 from django.db import connections
 
-async def sse_user_alerts(request, external_user_id):
-    async def event_stream():
+MAX_ALERTS_PER_LOOP = 50
+
+def sse_user_alerts(request, external_user_id):
+    """
+    Handles live alerts for a specific user.
+    Uses standard synchronous Django to avoid local server crashes.
+    """
+    def event_stream():
         print(f"--- SSE Connection Opened for External ID: {external_user_id} ---")
         try:
             while True:
@@ -127,8 +131,9 @@ async def sse_user_alerts(request, external_user_id):
                     sent_to_ui=False
                 ).order_by("triggered_at")[:MAX_ALERTS_PER_LOOP]
 
-                # Process alerts asynchronously
-                async for alert in alerts_queryset.aiter():
+                alerts = list(alerts_queryset)
+
+                for alert in alerts:
                     payload = {
                         "id": alert.id,
                         "message": alert.message,
@@ -138,18 +143,18 @@ async def sse_user_alerts(request, external_user_id):
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
 
-                    # Mark as sent
+                    # Mark as sent using standard save
                     alert.sent_to_ui = True
-                    # Use a_save() for async saving
-                    await alert.asave(update_fields=["sent_to_ui"])
+                    alert.save(update_fields=["sent_to_ui"])
 
                 yield ": heartbeat\n\n"
-                await asyncio.sleep(2)
-                
+                time.sleep(2)
+
+        except GeneratorExit:
+            print(f"--- SSE Disconnected for {external_user_id} ---")
         except Exception as e:
             print(f"SSE Error: {e}")
         finally:
-            # Force close DB connections when user disconnects to prevent "Too many connections"
             for conn in connections.all():
                 conn.close()
 
@@ -158,31 +163,36 @@ async def sse_user_alerts(request, external_user_id):
     response["X-Accel-Buffering"] = "no"
     return response
 
-async def sse_file_updates(request, pk):
-    async def event_stream():
+
+
+def sse_file_updates(request, pk):
+    """
+    Handles live updates for file associations using Redis cache.
+    """
+    def event_stream():
         last_version = None
         error_count = 0
-
-        while True:
-            await asyncio.sleep(2)
-
-            try:
-                version = cache.get(f"fa_version_{pk}", default=None)
-                
-                if version is not None and version != last_version:
-                    payload = cache.get(f"fa_data_{pk}")
-                    if payload:
-                        last_version = version
-                        yield f"data: {json.dumps(payload)}\n\n"
-                        error_count = 0
-                
-            except Exception as e:
-                print("Redis error in file SSE:", e)
-                error_count += 1
-                if error_count >= 3:
-                    yield "data: {\"error\": \"Live updates unavailable\"}\n\n"
-                    break
+        try:
+            while True:
+                time.sleep(2)
+                try:
+                    version = cache.get(f"fa_version_{pk}", default=None)
                     
+                    if version is not None and version != last_version:
+                        payload = cache.get(f"fa_data_{pk}")
+                        if payload:
+                            last_version = version
+                            yield f"data: {json.dumps(payload)}\n\n"
+                            error_count = 0
+                except Exception as e:
+                    print(f"Redis error in file SSE: {e}")
+                    error_count += 1
+                    if error_count >= 3:
+                        yield "data: {\"error\": \"Live updates unavailable\"}\n\n"
+                        break
+        except GeneratorExit:
+            print(f"File SSE disconnected for PK {pk}")
+
     response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"

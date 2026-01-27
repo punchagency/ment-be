@@ -99,15 +99,15 @@ DATABASES = {
         'PORT': os.environ.get('MYSQL_PORT', '3306'),
         'OPTIONS': {
             'charset': 'utf8mb4',
-            'connect_timeout': 5,
+            'connect_timeout': 10,
             'read_timeout': 30,      
             'write_timeout': 30,     
-            'init_command': "SET SESSION wait_timeout=650", 
+            # Reduce wait_timeout so MySQL kills idle connections faster
+            'init_command': "SET SESSION wait_timeout=60", 
         },
-        'CONN_MAX_AGE': 600,
+        'CONN_MAX_AGE': 0,
     }
 }
-
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
@@ -145,9 +145,25 @@ REST_FRAMEWORK = {
 # Redis
 REDIS_URL = os.getenv("REDIS_URL", "rediss://default:ATkiAAIncDJmOWZhNTA4MDBjMWE0YzhkOWU0ZGE4YzM4Yzg0MDY1NHAyMTQ2MjY@possible-dragon-14626.upstash.io:6379")
 
+# CACHES = {
+#     "default": {
+#         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+#     }
+# }
+
 CACHES = {
     "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "CONNECTION_POOL_KWARGS": {
+                "ssl_cert_reqs": None,
+                "max_connections": 10,  
+            },
+            "SOCKET_CONNECT_TIMEOUT": 5,
+            "SOCKET_TIMEOUT": 5,
+        }
     }
 }
 

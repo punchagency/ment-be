@@ -2,7 +2,7 @@ from ftplib import FTP
 import hashlib, csv, json, uuid
 from django.db import transaction
 from io import StringIO, BytesIO, TextIOWrapper
-from ..models import FileAssociation, MainData, Algo
+from ..models import FileAssociation, MainData, Algo, FavoriteRow
 from django.utils import timezone
 import re
 from typing import List, Dict
@@ -94,16 +94,14 @@ def store_csv_data(file_association: FileAssociation, content_bytes: bytes, new_
     # Process rows and assign _row_id
     for row in rows:
         key = get_stable_key(row)
-        # Preserve old _row_id if exists, otherwise create new
         row["_row_id"] = existing_rows_by_key.get(key, str(uuid.uuid4()))
         row["_supports_targets"] = supports_targets
         row["_supports_direction"] = supports_direction
         row["_supports_volume"] = supports_volume
         row["_price_field"] = price_field
-        # Compute row hash
         row["_row_hash"] = MainData.compute_row_hash(row)
 
-    # Save MainData and FileAssociation metadata
+    # Save MainData and FileAssociation metadata, and clean up favorites
     with transaction.atomic():
         MainData.objects.update_or_create(
             file_association=file_association,
@@ -117,40 +115,14 @@ def store_csv_data(file_association: FileAssociation, content_bytes: bytes, new_
             file_association.file_path = url
         file_association.save(update_fields=['headers', 'last_hash', 'last_fetched_at', 'file_path'])
 
+        # Delete favorites pointing to removed rows
+        valid_row_ids = {row["_row_id"] for row in rows}
+        stale_favorites = FavoriteRow.objects.filter(file_association=file_association).exclude(row_id__in=valid_row_ids)
+        if stale_favorites.exists():
+            print(f"Deleting {stale_favorites.count()} stale favorite(s) for {file_association.file_path}")
+            stale_favorites.delete()
+
     return len(rows)
-
-
-# def store_csv_data(file_association: FileAssociation, content_bytes: bytes, new_hash: str, url: str = None) -> int:
-#     headers, rows = parse_csv_bytes_to_dicts(content_bytes, file_association)
-
-#     file_algo_name = file_association.algo.algo_name if file_association.algo else "Auto-Detect"
-#     algo_config = Algo.objects.filter(algo_name=file_algo_name).first()
-
-#     supports_targets = algo_config.supports_targets if algo_config else True
-#     supports_direction = algo_config.supports_direction if algo_config else True
-#     supports_volume = algo_config.supports_volume_alerts if algo_config else False
-#     price_field = algo_config.price_field_key if algo_config else "Last"
-
-#     for row in rows:
-#         row["_supports_targets"] = supports_targets
-#         row["_supports_direction"] = supports_direction
-#         row["_supports_volume"] = supports_volume
-#         row["_price_field"] = price_field
-
-#     with transaction.atomic():
-#         MainData.objects.update_or_create(
-#             file_association=file_association,
-#             defaults={"data_json": {"headers": headers, "rows": rows}}
-#         )
-
-#         file_association.headers = headers
-#         file_association.last_hash = new_hash
-#         file_association.last_fetched_at = timezone.now()
-#         if url:
-#             file_association.file_path = url
-#         file_association.save(update_fields=['headers', 'last_hash', 'last_fetched_at', 'file_path'])
-
-#     return len(rows)
 
 
 def parse_csv_bytes_to_dicts(csv_bytes: bytes, fa: FileAssociation, encoding='utf-8'):

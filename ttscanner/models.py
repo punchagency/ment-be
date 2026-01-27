@@ -199,8 +199,8 @@ class FavoriteRow(models.Model):
         db_table = 'ttscanner_favoriterow'
         unique_together = ('user', 'row_id', 'file_association')
         indexes = [
-            models.Index(fields=['user', '-created_at']),  # User's latest favorites
-            models.Index(fields=['file_association', 'user']),  # Find user's favs in file
+            models.Index(fields=['user', '-created_at']),  
+            models.Index(fields=['file_association', 'user']), 
         ]
 
 

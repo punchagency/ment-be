@@ -109,72 +109,80 @@ def logout_view(request):
     return Response({"detail": "Logged out successfully"}, status=status.HTTP_200_OK)
 
 
-def sse_user_alerts(request, external_user_id):
-    def event_stream():
-        # This 'external_user_id' comes from the URL /sse/2/
+from django.db.models import Q
+
+MAX_ALERTS_PER_LOOP = 10  # just an example
+
+import asyncio
+from django.db import connections
+
+async def sse_user_alerts(request, external_user_id):
+    async def event_stream():
         print(f"--- SSE Connection Opened for External ID: {external_user_id} ---")
-        
-        while True:
-            alerts = TriggeredAlert.objects.filter(
-                custom_alert__user__external_user_id=external_user_id,
-                sent_to_ui=False
-            )
+        try:
+            while True:
+                alerts_queryset = TriggeredAlert.objects.filter(
+                    Q(alert_source__in=["system", "global"]) |
+                    Q(alert_source="custom", custom_alert__user__external_user_id=external_user_id),
+                    sent_to_ui=False
+                ).order_by("triggered_at")[:MAX_ALERTS_PER_LOOP]
 
-            for alert in alerts:
-                print(f"MATCH FOUND: Sending Alert {alert.id} to External ID {external_user_id}")
-                payload = {
-                    "id": alert.id,
-                    "message": alert.message,
-                    "symbol": alert.symbol or "N/A",
-                    "triggered_at": alert.triggered_at.isoformat(),
-                    "source": alert.alert_source
-                }
-                yield f"data: {json.dumps(payload)}\n\n"
+                # Process alerts asynchronously
+                async for alert in alerts_queryset.aiter():
+                    payload = {
+                        "id": alert.id,
+                        "message": alert.message,
+                        "symbol": alert.symbol or "N/A",
+                        "triggered_at": alert.triggered_at.isoformat(),
+                        "source": alert.alert_source
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+
+                    # Mark as sent
+                    alert.sent_to_ui = True
+                    # Use a_save() for async saving
+                    await alert.asave(update_fields=["sent_to_ui"])
+
+                yield ": heartbeat\n\n"
+                await asyncio.sleep(2)
                 
-                alert.sent_to_ui = True
-                alert.save(update_fields=["sent_to_ui"])
-
-            yield ": heartbeat\n\n"
-            time.sleep(2)
+        except Exception as e:
+            print(f"SSE Error: {e}")
+        finally:
+            # Force close DB connections when user disconnects to prevent "Too many connections"
+            for conn in connections.all():
+                conn.close()
 
     response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"
     return response
 
-
-
-def sse_file_updates(request, pk):
-
-    def event_stream():
+async def sse_file_updates(request, pk):
+    async def event_stream():
         last_version = None
         error_count = 0
 
         while True:
-            time.sleep(2)
+            await asyncio.sleep(2)
 
             try:
                 version = cache.get(f"fa_version_{pk}", default=None)
+                
+                if version is not None and version != last_version:
+                    payload = cache.get(f"fa_data_{pk}")
+                    if payload:
+                        last_version = version
+                        yield f"data: {json.dumps(payload)}\n\n"
+                        error_count = 0
+                
             except Exception as e:
                 print("Redis error in file SSE:", e)
                 error_count += 1
-
                 if error_count >= 3:
                     yield "data: {\"error\": \"Live updates unavailable\"}\n\n"
                     break
-
-                continue
-
-            if version is None:
-                continue
-
-            if version != last_version:
-                payload = cache.get(f"fa_data_{pk}")
-                if payload:
-                    last_version = version
-                    yield f"data: {json.dumps(payload)}\n\n"
-                    error_count = 0
-
+                    
     response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
     response["Cache-Control"] = "no-cache"
     response["X-Accel-Buffering"] = "no"

@@ -469,10 +469,10 @@ class CustomAlertCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     "compare_value": f"'{field_name}' is numeric — compare value must be a number."
                 })
-            if not is_numeric_field and is_numeric(compare_value):
-                raise serializers.ValidationError({
-                    "compare_value": f"'{field_name}' is text — compare value cannot be numeric."
-                })
+            # if not is_numeric_field and is_numeric(compare_value):
+            #     raise serializers.ValidationError({
+            #         "compare_value": f"'{field_name}' is text — compare value cannot be numeric."
+            #     })
 
         return data
 
@@ -521,10 +521,10 @@ class CustomAlertUpdateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     "compare_value": f"'{field_name}' is numeric — compare value must be a number."
                 })
-            if not is_numeric_field and is_numeric(compare_value):
-                raise serializers.ValidationError({
-                    "compare_value": f"'{field_name}' is text — compare value cannot be numeric."
-                })
+            # if not is_numeric_field and is_numeric(compare_value):
+            #     raise serializers.ValidationError({
+            #         "compare_value": f"'{field_name}' is text — compare value cannot be numeric."
+            #     })
 
         if CustomAlert.objects.filter(
             file_association=fa,
